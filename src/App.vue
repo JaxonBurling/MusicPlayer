@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { RouterView } from "vue-router";
 import { Search, User } from "@element-plus/icons-vue";
 
 const search_inp = ref("");
 const rolled = ref(false);
 const source = ref(false);
+const darkMode = ref(false);
 const avatarUrl = ref("https://auth.overpass.top/api/profile/avatar/")
 
 if (localStorage.getItem("auth")) {
@@ -21,6 +22,20 @@ const handleAvatarError = () => {
 function roll() {
   rolled.value = !rolled.value;
 }
+
+watch(darkMode, (newVal) => {
+    if (newVal) {
+        document.documentElement.classList.add('dark')
+        document.body.style.backgroundColor = '#1a1a1a'
+        document.body.style.color = '#e6e6e6'
+    } else {
+        document.documentElement.classList.remove('dark')
+        document.body.style.backgroundColor = '#ffffff'
+        document.body.style.color = '#333333'
+    }
+    localStorage.setItem('theme', newVal ? 'dark' : 'light')
+})
+
 </script>
 
 <template>
@@ -34,6 +49,11 @@ function roll() {
             >
               {{ rolled ? "✕" : "☰" }}
             </a>
+            <el-switch
+              v-model="darkMode"
+              active-text="深色模式"
+              inactive-text="浅色模式"
+            />
           </div>
 
             <el-input
@@ -44,13 +64,9 @@ function roll() {
         >
         </el-input>
         <div class="header-right">
-            <el-switch
-              v-model="source"
-              active-text="网易云"
-              inactive-text="酷狗"
-              active-color="#13ce66"
-              inactive-color="#ff4949"
-            />
+          <img src="/kugou.png" style="height: 22px; width: auto;" />
+            <el-switch v-model="source"/>
+            <img src="/wyy.png" style="height:22px; width: auto;" />
             <el-avatar :size="40" :src="avatarUrl" @error="handleAvatarError">
               <el-icon :size="20"><User /></el-icon>
             </el-avatar>
