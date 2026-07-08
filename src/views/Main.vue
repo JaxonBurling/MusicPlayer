@@ -1,1 +1,1 @@
-<template>ABC</template>
+<template><el-text>ABC</el-text></template>
