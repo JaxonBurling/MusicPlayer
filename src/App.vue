@@ -1,17 +1,17 @@
 <script setup lang="ts">
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 import { window } from "@tauri-apps/api";
 
 import { ref, watch, onMounted } from "vue";
 import { RouterView } from "vue-router";
 import {
-    Search,
-    User,
-    Minus,
-    FullScreen,
-    Close,
-    Sunny,
-    Moon,
+  FullScreen,
+  MoreFilled,
+  Search,
+  Minus,
+  Close,
+  Sunny,
+  User,
+  Moon
 } from "@element-plus/icons-vue";
 import { useAppStore } from "./state";
 
@@ -45,6 +45,13 @@ watch(darkMode, appStore.toggleDarkMode);
 
 <template>
     <div data-tauri-drag-region class="drag-region">
+        <el-switch
+            v-model="darkMode"
+            :active-icon="Moon"
+            :inactive-icon="Sunny"
+            style="margin-left: 20px;"
+        />
+        <div>
         <el-button
             :icon="Minus"
             text
@@ -61,17 +68,24 @@ watch(darkMode, appStore.toggleDarkMode);
             :icon="Close"
             text
             class="titlebar-button"
+            style="margin-right: 5px;"
             @click="window.getCurrentWindow().close()"
         />
+        </div>
     </div>
     <el-container style="margin: 0 5px">
         <el-header class="header">
-            <div class="header-left">
-                <el-switch
-                    v-model="darkMode"
-                    :active-icon="Moon"
-                    :inactive-icon="Sunny"
-                />
+            <div>
+                <el-popover trigger="click" placement="bottom-start">
+                    <template #reference>
+                        <el-button text style="width: 30px;">
+                            <el-icon :size="20">
+                                <MoreFilled />
+                              </el-icon>
+                        </el-button>
+                    </template>
+                    <h1>我是菜单</h1>
+                </el-popover>
             </div>
 
             <el-input
@@ -106,7 +120,7 @@ watch(darkMode, appStore.toggleDarkMode);
     background: var(--el-bg-color);
     user-select: none;
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
 }
 
@@ -120,6 +134,7 @@ watch(darkMode, appStore.toggleDarkMode);
 .header {
     font-size: 22px;
     letter-spacing: 2px;
+    padding: 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
