@@ -1,27 +1,25 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Song, UserInfo } from './api/index'
-import { getSongUrl, getUserInfo as fetchUserInfo, getCookie, setCookie, clearCookie } from './api/index'
+import type { Song, UserInfo, Playlist } from './api/index'
+import {
+  getSongUrl, getUserInfo as fetchUserInfo,
+  getCookie, setCookie, clearCookie,
+  getUserPlaylists, getLikedSongs,
+} from './api/index'
 
 export type PlayMode = 'list' | 'random' | 'single'
 
 export const useAppStore = defineStore('app', () => {
   // ========== 主题 ==========
   const darkMode = ref(false)
-
   function toggleDarkMode() {
     darkMode.value = !darkMode.value
-    if (darkMode.value) {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+    document.documentElement.classList.toggle('dark', darkMode.value)
     localStorage.setItem('theme', darkMode.value ? 'dark' : 'light')
   }
 
   // ========== 音源选择 ==========
   const source = ref<'kugou' | 'netease'>('netease')
-
   function toggleSource() {
     source.value = source.value === 'kugou' ? 'netease' : 'kugou'
   }
@@ -32,51 +30,47 @@ export const useAppStore = defineStore('app', () => {
   const kugouUser = ref<UserInfo | null>(null)
   const neteaseUser = ref<UserInfo | null>(null)
 
-  /** 当前音源是否已登录 */
-  function isLoggedIn() {
-    return source.value === 'kugou' ? kugouLogin.value : neteaseLogin.value
-  }
+  function isLoggedIn() { return source.value === 'kugou' ? kugouLogin.value : neteaseLogin.value }
+  function currentUser() { return source.value === 'kugou' ? kugouUser.value : neteaseUser.value }
 
-  /** 当前音源的用户信息 */
-  function currentUser() {
-    return source.value === 'kugou' ? kugouUser.value : neteaseUser.value
-  }
-
-  /** 保存登录凭证 */
   function saveLogin(src: 'kugou' | 'netease', cookie: string, token?: string, userId?: string | number) {
     const cookieStr = token ? `token=${token};userid=${userId || ''}` : cookie
     setCookie(src, cookieStr)
-    if (src === 'kugou') {
-      kugouLogin.value = true
-    } else {
-      neteaseLogin.value = true
-    }
+    if (src === 'kugou') kugouLogin.value = true
+    else neteaseLogin.value = true
   }
 
-  /** 退出登录 */
   function logout(src: 'kugou' | 'netease') {
     clearCookie(src)
-    if (src === 'kugou') {
-      kugouLogin.value = false
-      kugouUser.value = null
-    } else {
-      neteaseLogin.value = false
-      neteaseUser.value = null
-    }
+    if (src === 'kugou') { kugouLogin.value = false; kugouUser.value = null }
+    else { neteaseLogin.value = false; neteaseUser.value = null }
   }
 
-  /** 加载当前音源用户信息 */
   async function loadUserInfo() {
     const info = await fetchUserInfo(source.value)
     if (info) {
-      if (source.value === 'kugou') {
-        kugouUser.value = info
-        kugouLogin.value = true
-      } else {
-        neteaseUser.value = info
-        neteaseLogin.value = true
-      }
+      if (source.value === 'kugou') { kugouUser.value = info; kugouLogin.value = true }
+      else { neteaseUser.value = info; neteaseLogin.value = true }
     }
+  }
+
+  // ========== 用户平台数据 ==========
+  const userPlaylists = ref<Playlist[]>([])
+  const userLikedSongs = ref<Song[]>([])
+  const homeLoading = ref(false)
+
+  async function loadUserPlatformData() {
+    if (!isLoggedIn()) { userPlaylists.value = []; userLikedSongs.value = []; return }
+    homeLoading.value = true
+    try {
+      const [playlists, liked] = await Promise.all([
+        getUserPlaylists(source.value),
+        getLikedSongs(source.value),
+      ])
+      userPlaylists.value = playlists
+      userLikedSongs.value = liked
+    } catch { /* 加载失败不影响其他功能 */ }
+    finally { homeLoading.value = false }
   }
 
   // ========== 播放器状态 ==========
@@ -94,7 +88,6 @@ export const useAppStore = defineStore('app', () => {
     currentSong.value = song
     isPlaying.value = false
     audioUrl.value = ''
-
     const result = await getSongUrl(song)
     if (result.canPlay && result.url) {
       audioUrl.value = result.url
@@ -127,6 +120,33 @@ export const useAppStore = defineStore('app', () => {
     playlist.value.splice(insertIdx, 0, song)
   }
 
+  /** 从播放列表移除歌曲 */
+  function removeFromList(index: number) {
+    if (index < 0 || index >= playlist.value.length) return
+    playlist.value.splice(index, 1)
+    if (index < playlistIndex.value) playlistIndex.value--
+    else if (index === playlistIndex.value) {
+      if (playlist.value.length === 0) {
+        playlistIndex.value = -1; currentSong.value = null; isPlaying.value = false
+      } else {
+        const newIdx = Math.min(playlistIndex.value, playlist.value.length - 1)
+        playFromList(newIdx)
+      }
+    }
+  }
+
+  /** 交换播放列表中两项的位置 */
+  function swapInList(from: number, to: number) {
+    const list = playlist.value
+    if (from < 0 || from >= list.length || to < 0 || to >= list.length) return
+    const [item] = list.splice(from, 1)
+    list.splice(to, 0, item)
+    // 更新当前播放索引
+    if (playlistIndex.value === from) playlistIndex.value = to
+    else if (from < to && playlistIndex.value > from && playlistIndex.value <= to) playlistIndex.value--
+    else if (from > to && playlistIndex.value >= to && playlistIndex.value < from) playlistIndex.value++
+  }
+
   async function prev() {
     const len = playlist.value.length
     if (len === 0) return
@@ -139,8 +159,7 @@ export const useAppStore = defineStore('app', () => {
     const len = playlist.value.length
     if (len === 0) return
     if (playMode.value === 'random') {
-      const randomIdx = Math.floor(Math.random() * len)
-      await playFromList(randomIdx)
+      await playFromList(Math.floor(Math.random() * len))
     } else if (playMode.value === 'single') {
       await playFromList(playlistIndex.value)
     } else {
@@ -152,42 +171,30 @@ export const useAppStore = defineStore('app', () => {
 
   function togglePlayMode() {
     const modes: PlayMode[] = ['list', 'random', 'single']
-    const idx = modes.indexOf(playMode.value)
-    playMode.value = modes[(idx + 1) % modes.length]
+    playMode.value = modes[(modes.indexOf(playMode.value) + 1) % modes.length]
   }
 
-  function togglePlay() {
-    isPlaying.value = !isPlaying.value
-  }
+  function togglePlay() { isPlaying.value = !isPlaying.value }
 
   // ========== 收藏 ==========
   const favorites = ref<Song[]>(loadFavorites())
-
   function loadFavorites(): Song[] {
     try { return JSON.parse(localStorage.getItem('favorites') || '[]') } catch { return [] }
   }
-
-  function saveFavorites() {
-    localStorage.setItem('favorites', JSON.stringify(favorites.value))
-  }
-
+  function saveFavorites() { localStorage.setItem('favorites', JSON.stringify(favorites.value)) }
   function isFavorite(song: Song): boolean {
     return favorites.value.some(s =>
       (song.source === 'kugou' && s.hash === song.hash) ||
       (song.source === 'netease' && s.id === song.id)
     )
   }
-
   function toggleFavorite(song: Song) {
     const idx = favorites.value.findIndex(s =>
       (song.source === 'kugou' && s.hash === song.hash) ||
       (song.source === 'netease' && s.id === song.id)
     )
-    if (idx > -1) {
-      favorites.value.splice(idx, 1)
-    } else {
-      favorites.value.push({ ...song })
-    }
+    if (idx > -1) favorites.value.splice(idx, 1)
+    else favorites.value.push({ ...song })
     saveFavorites()
   }
 
@@ -201,14 +208,12 @@ export const useAppStore = defineStore('app', () => {
   return {
     darkMode, toggleDarkMode,
     source, toggleSource,
-    // 登录
     kugouLogin, neteaseLogin, kugouUser, neteaseUser,
     isLoggedIn, currentUser, saveLogin, logout, loadUserInfo,
-    // 播放器
+    userPlaylists, userLikedSongs, homeLoading, loadUserPlatformData,
     currentSong, playlist, playlistIndex, isPlaying, audioUrl, volume, playMode, showPlayer,
-    playSong, playFromList, playList, addToList, playNext, prev, next, togglePlay, togglePlayMode,
-    setAudioElement,
-    // 收藏
+    playSong, playFromList, playList, addToList, playNext, removeFromList, swapInList,
+    prev, next, togglePlay, togglePlayMode, setAudioElement,
     favorites, isFavorite, toggleFavorite,
   }
 })

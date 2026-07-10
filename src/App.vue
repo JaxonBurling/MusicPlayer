@@ -1,17 +1,10 @@
 <script setup lang="ts">
 import { window } from '@tauri-apps/api'
 
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { RouterView } from 'vue-router'
 import {
-  FullScreen,
-  MoreFilled,
-  Search,
-  Minus,
-  Close,
-  Sunny,
-  User,
-  Moon,
+  FullScreen, MoreFilled, Search, Minus, Close, Sunny, User, Moon,
 } from '@element-plus/icons-vue'
 import { useAppStore } from './state'
 import { useRouter } from 'vue-router'
@@ -23,19 +16,13 @@ const router = useRouter()
 const searchInput = ref('')
 const darkMode = ref(false)
 
-// 当前音源头像
-const avatarUrl = ref('')
-watch(() => appStore.source, async () => {
+// 当前音源的用户头像（响应式）
+const avatarUrl = computed(() => {
   const u = appStore.currentUser()
-  avatarUrl.value = u?.avatarUrl || ''
-  // 切换音源后尝试加载用户信息
-  if (appStore.isLoggedIn() && !u) {
-    await appStore.loadUserInfo()
-    avatarUrl.value = appStore.currentUser()?.avatarUrl || ''
-  }
-}, { immediate: true })
+  return u?.avatarUrl || ''
+})
 
-// 初始化时尝试加载用户头像
+// 初始化
 onMounted(async () => {
   // 深色模式
   const saved = localStorage.getItem('theme')
@@ -51,47 +38,48 @@ onMounted(async () => {
   }
   appStore.darkMode = darkMode.value
 
-  // 加载用户信息获取头像
-  if (appStore.isLoggedIn()) {
+  // 加载所有已登录音源的用户信息（保留当前音源）
+  const origSource = appStore.source
+  if (appStore.kugouLogin) {
+    appStore.source = 'kugou'
     await appStore.loadUserInfo()
-    avatarUrl.value = appStore.currentUser()?.avatarUrl || ''
+  }
+  if (appStore.neteaseLogin) {
+    appStore.source = 'netease'
+    await appStore.loadUserInfo()
+  }
+  appStore.source = origSource
+})
+
+// 切换音源 → 刷新用户信息
+watch(() => appStore.source, async () => {
+  if (appStore.isLoggedIn() && !appStore.currentUser()) {
+    await appStore.loadUserInfo()
   }
 })
 
 watch(darkMode, (val) => {
   appStore.darkMode = val
-  if (val) document.documentElement.classList.add('dark')
-  else document.documentElement.classList.remove('dark')
+  document.documentElement.classList.toggle('dark', val)
   localStorage.setItem('theme', val ? 'dark' : 'light')
 })
 
-/** 搜索框回车 → 跳转搜索页面 */
 function onSearchEnter() {
   const kw = searchInput.value.trim()
   if (!kw) return
   router.push({ name: 'search', query: { q: kw } })
 }
 
-/** 头像点击 → 根据登录状态跳转 */
 function onAvatarClick() {
-  if (appStore.isLoggedIn()) {
-    router.push('/user')
-  } else {
-    router.push('/login')
-  }
+  router.push(appStore.isLoggedIn() ? '/user' : '/login')
 }
 
-const handleAvatarError = () => { return true }
+const handleAvatarError = () => true
 </script>
 
 <template>
   <div data-tauri-drag-region class="drag-region">
-    <el-switch
-      v-model="darkMode"
-      :active-icon="Moon"
-      :inactive-icon="Sunny"
-      style="margin-left: 20px"
-    />
+    <el-switch v-model="darkMode" :active-icon="Moon" :inactive-icon="Sunny" style="margin-left: 20px" />
     <div>
       <el-button :icon="Minus" text class="titlebar-button" @click="window.getCurrentWindow().minimize()" />
       <el-button :icon="FullScreen" text class="titlebar-button" @click="window.getCurrentWindow().toggleMaximize()" />
@@ -110,33 +98,23 @@ const handleAvatarError = () => { return true }
           </template>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <el-button text @click="router.push('/')">首页</el-button>
-            <el-button text @click="router.push('/search')" style="margin-left: 0;">搜索</el-button>
+            <el-button text @click="router.push('/search')">搜索</el-button>
           </div>
         </el-popover>
       </div>
 
       <el-input
-        v-model="searchInput"
-        class="search-input"
-        placeholder="搜索歌曲..."
-        :prefix-icon="Search"
-        clearable
-        @keyup.enter="onSearchEnter"
+        v-model="searchInput" class="search-input" placeholder="搜索歌曲..."
+        :prefix-icon="Search" clearable @keyup.enter="onSearchEnter"
       />
 
       <div class="header-right">
         <img src="/kugou.png" style="height: 22px; width: auto" alt="酷狗" />
-        <el-switch
-          :model-value="appStore.source === 'netease'"
-          @change="appStore.toggleSource()"
-        />
+        <el-switch :model-value="appStore.source === 'netease'" @change="appStore.toggleSource()" />
         <img src="/wyy.png" style="height: 22px; width: auto" alt="网易云" />
         <el-avatar
-          :size="40"
-          :src="avatarUrl"
-          @error="handleAvatarError"
-          style="margin-left: 20px; cursor: pointer"
-          @click="onAvatarClick"
+          :size="40" :src="avatarUrl" @error="handleAvatarError"
+          style="margin-left: 20px; cursor: pointer" @click="onAvatarClick"
         >
           <el-icon :size="20"><User /></el-icon>
         </el-avatar>
@@ -154,86 +132,9 @@ const handleAvatarError = () => { return true }
 </template>
 
 <style scoped>
-.burger {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    width: 24px;
-    height: 20px;
-    cursor: pointer;
-    user-select: none;
-    flex-shrink: 0;
-}
-
-.burger-line {
-    display: block;
-    height: 3px;
-    width: 100%;
-    background-color: #333;
-    border-radius: 3px;
-    transition: all 0.3s ease;
-    transform-origin: left center;
-}
-
-html.dark .burger-line {
-    background-color: #fff;
-}
-
-.burger.active .burger-line:nth-child(1) {
-    transform: translateX(calc(100% - 100% * 0.7071)) rotate(45deg);
-}
-
-.burger.active .burger-line:nth-child(2) {
-    opacity: 0;
-    transform: scaleX(0);
-}
-
-.burger.active .burger-line:nth-child(3) {
-    transform: translateX(calc(100% - 100% * 0.7071)) rotate(-45deg);
-}
-
-.drag-region {
-  height: 40px;
-  background: var(--el-bg-color);
-  user-select: none;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-}
-
-.titlebar-button {
-  display: inline-flex;
-  width: 30px;
-  height: 30px;
-  user-select: none;
-}
-
-.header {
-
-  font-size: 22px;
-  letter-spacing: 2px;
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.search-input {
-  width: 40%;
-  min-width: 100px;
-}
+.drag-region { height: 40px; background: var(--el-bg-color); user-select: none; display: flex; justify-content: space-between; align-items: center; }
+.titlebar-button { display: inline-flex; width: 30px; height: 30px; user-select: none; }
+.header { font-size: 22px; letter-spacing: 2px; padding: 10px; display: flex; align-items: center; justify-content: space-between; }
+.header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.search-input { width: 40%; min-width: 100px; }
 </style>
