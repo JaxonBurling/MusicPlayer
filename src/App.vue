@@ -1,26 +1,4 @@
 <script setup lang="ts">
-<<<<<<< Updated upstream
-import { window } from "@tauri-apps/api";
-import { ref, watch, onMounted } from "vue";
-import { RouterView } from "vue-router";
-import {
-    Search,
-    User,
-    Minus,
-    FullScreen,
-    Close,
-    Sunny,
-    Moon,
-} from "@element-plus/icons-vue";
-import { useAppStore } from "./state";
-
-const appStore = useAppStore();
-const rolled = ref(false);
-const search_inp = ref("");
-const source = ref(false);
-const darkMode = ref(false);
-const avatarUrl = ref("https://auth.overpass.top/api/profile/avatar/");
-=======
 import { window } from '@tauri-apps/api'
 
 import { ref, watch, onMounted } from 'vue'
@@ -44,7 +22,6 @@ const router = useRouter()
 
 const searchInput = ref('')
 const darkMode = ref(false)
->>>>>>> Stashed changes
 
 // 当前音源头像
 const avatarUrl = ref('')
@@ -95,65 +72,6 @@ function onSearchEnter() {
   router.push({ name: 'search', query: { q: kw } })
 }
 
-<<<<<<< Updated upstream
-function roll() {
-  rolled.value = !rolled.value;
-}
-
-const handleAvatarError = () => {
-    console.log("头像加载失败");
-    return true;
-};
-
-onMounted(() => {
-    if (localStorage.getItem("theme") === "dark") {
-        darkMode.value = true;
-    }
-});
-
-watch(darkMode, appStore.toggleDarkMode);
-</script>
-
-<template>
-    <div data-tauri-drag-region class="drag-region">
-        <el-button
-            :icon="Minus"
-            text
-            class="titlebar-button"
-            @click="window.getCurrentWindow().minimize()"
-        />
-        <el-button
-            :icon="FullScreen"
-            text
-            class="titlebar-button"
-            @click="window.getCurrentWindow().toggleMaximize()"
-        />
-        <el-button
-            :icon="Close"
-            text
-            class="titlebar-button"
-            @click="window.getCurrentWindow().close()"
-        />
-    </div>
-    <el-container style="margin: 0 5px">
-        <el-header class="header">
-            <div class="header-left">
-                <span
-                  class="burger"
-                  :class="{ active : rolled}"
-                  @click="roll"
-                >
-                  <span class="burger-line"></span>
-                  <span class="burger-line"></span>
-                  <span class="burger-line"></span>
-                </span>
-                <el-switch
-                    v-model="darkMode"
-                    :active-icon="Moon"
-                    :inactive-icon="Sunny"
-                />
-            </div>
-=======
 /** 头像点击 → 根据登录状态跳转 */
 function onAvatarClick() {
   if (appStore.isLoggedIn()) {
@@ -180,7 +98,6 @@ const handleAvatarError = () => { return true }
       <el-button :icon="Close" text class="titlebar-button" style="margin-right: 5px" @click="window.getCurrentWindow().close()" />
     </div>
   </div>
->>>>>>> Stashed changes
 
   <el-container style="margin: 0 5px">
     <el-header class="header">
@@ -276,21 +193,13 @@ html.dark .burger-line {
 }
 
 .drag-region {
-<<<<<<< Updated upstream
-    height: 40px;
-    background: var(--el-bg-color);
-    user-select: none;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-=======
   height: 40px;
   background: var(--el-bg-color);
   user-select: none;
   display: flex;
   justify-content: space-between;
   align-items: center;
->>>>>>> Stashed changes
+
 }
 
 .titlebar-button {
@@ -301,20 +210,13 @@ html.dark .burger-line {
 }
 
 .header {
-<<<<<<< Updated upstream
-    font-size: 22px;
-    letter-spacing: 2px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-=======
+
   font-size: 22px;
   letter-spacing: 2px;
   padding: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
->>>>>>> Stashed changes
 }
 
 .header-left {
