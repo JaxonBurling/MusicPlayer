@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "musicplayer",
+  "productName": "MusicPlayer",
   "version": "0.1.0",
   "identifier": "top.ovps.music",
   "build": {
@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "musicplayer",
+        "title": "MusicPlayer",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "minWidth": 740,
+        "minHeight": 250,
+        "decorations": false
       }
     ],
     "security": {
