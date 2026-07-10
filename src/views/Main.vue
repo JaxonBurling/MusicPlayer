@@ -1,6 +1,3 @@
-<<<<<<< Updated upstream
-<template>ABC</template>
-=======
 <script setup lang="ts">
 /**
  * 主页 - 简洁首页
@@ -254,4 +251,3 @@ function playFavorite(_song: Song, index: number) {
   flex-shrink: 0;
 }
 </style>
->>>>>>> Stashed changes
