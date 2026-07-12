@@ -78,14 +78,17 @@ const handleAvatarError = () => true
 </script>
 
 <template>
-  <div data-tauri-drag-region class="drag-region">
-    <el-switch v-model="darkMode" :active-icon="Moon" :inactive-icon="Sunny" style="margin-left: 20px" />
-    <div>
-      <el-button :icon="Minus" text class="titlebar-button" @click="window.getCurrentWindow().minimize()" />
-      <el-button :icon="FullScreen" text class="titlebar-button" @click="window.getCurrentWindow().toggleMaximize()" />
-      <el-button :icon="Close" text class="titlebar-button" style="margin-right: 5px" @click="window.getCurrentWindow().close()" />
+<el-affix :offset="0">
+    <div data-tauri-drag-region class="drag-region">
+      <el-switch v-model="darkMode" :active-icon="Moon" :inactive-icon="Sunny" style="margin-left: 20px" />
+      <div>
+        <el-button :icon="Minus" text class="titlebar-button" @click="window.getCurrentWindow().minimize()" />
+        <el-button :icon="FullScreen" text class="titlebar-button" @click="window.getCurrentWindow().toggleMaximize()" />
+        <el-button :icon="Close" text class="titlebar-button" style="margin-right: 5px" @click="window.getCurrentWindow().close()" />
+      </div>
     </div>
-  </div>
+  </el-affix>
+
 
   <el-container style="margin: 0 5px">
     <el-header class="header">
@@ -98,7 +101,7 @@ const handleAvatarError = () => true
           </template>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <el-button text @click="router.push('/')">首页</el-button>
-            <el-button text @click="router.push('/search')">搜索</el-button>
+            <el-button text @click="router.push('/search')" style="margin-left: 0;">搜索</el-button>
           </div>
         </el-popover>
       </div>

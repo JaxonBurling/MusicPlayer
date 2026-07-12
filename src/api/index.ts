@@ -220,7 +220,7 @@ export async function loginByPhone(
 ): Promise<LoginCredential | null> {
   const base = source === 'kugou' ? KUGOU_BASE : NETEASE_BASE
   const param = source === 'kugou' ? 'mobile' : 'phone'
-  const data = await request(`${base}/login/cellphone?${param}=${phone}&code=${encodeURIComponent(code)}`)
+  const data = await request(`${base}/login/cellphone?${param}=${phone}&${source === 'kugou' ? 'code' : 'captcha'}=${encodeURIComponent(code)}`)
   if (source === 'kugou') {
     if (data.status === 1 || data.data?.token) return { token: data.data?.token, userId: data.data?.userid }
   } else {
@@ -240,7 +240,7 @@ export async function getUserInfo(source: 'kugou' | 'netease'): Promise<UserInfo
       return {
         id: data.data.userid || data.data.userId,
         nickname: data.data.username || data.data.nickname || '',
-        avatarUrl: data.data.avatar || data.data.headimg || '',
+        avatarUrl: data.data.avatar || data.data.pic || '',
       }
     }
   } else {
@@ -297,14 +297,14 @@ export async function getPlaylistSongs(source: 'kugou' | 'netease', playlistId: 
   const cookie = getCookie(source)
   if (!cookie) return []
   if (source === 'kugou') {
-    const data = await request(`${KUGOU_BASE}/playlist/track/all?specialid=${playlistId}&page=1&pagesize=50`, cookie)
-    if (data.status === 1 && data.data?.lists) {
-      return data.data.lists.map((item: any) => ({
-        pic: (item.image || '').replace('{size}', '128') || item.pic.replace('{size}', '128') || '',
+    const data = await request(`${KUGOU_BASE}/playlist/track/all?id=${playlistId}&page=1&pagesize=50`, cookie)
+    if (data.status === 1 && data.data?.songs) {
+      return data.data.songs.map((item: any) => ({
+        pic: (item.cover || '').replace('{size}', '128') || (item.pic||'').replace('{size}', '128') || '',
         hash: item.FileHash || item.hash,
-        name: item.SongName || item.songname || item.name || '',
-        artist: item.SingerName || item.singername || item.author_name || '',
-        album: item.AlbumName || item.album_name || '',
+        name: item.SongName || item.songname || item.name.slice(item.name.indexOf(' - ') + 3) || '',
+        artist: item.SingerName || item.singername || item.name.substring(0, item.name.indexOf(' - ')) || '',
+        album: item.AlbumName || item.albuminfo.name || '',
         duration: item.Duration || item.duration,
         source: 'kugou' as const,
       }))
@@ -331,17 +331,12 @@ export async function getLikedSongs(source: 'kugou' | 'netease'): Promise<Song[]
   const cookie = getCookie(source)
   if (!cookie) return []
   if (source === 'kugou') {
-    // 酷狗：获取听歌历史排行作为"收藏"参考
-    const data = await request(`${KUGOU_BASE}/user/listen?type=1`, cookie)
-    if (data.status === 1 && data.data?.lists) {
-      return data.data.lists.map((item: any) => ({
-        hash: item.FileHash || item.hash,
-        name: item.SongName || item.songname || item.name || '',
-        artist: item.SingerName || item.singername || item.author_name || '',
-        album: item.AlbumName || item.album_name || '',
-        duration: item.Duration || item.duration,
-        source: 'kugou' as const,
-      }))
+    // 酷狗：获取歌单中的"我喜欢"
+    const p_l = await getUserPlaylists("kugou")
+    for (const item of p_l) {
+      if (item.name === "我喜欢" && item.trackCount !== 0) {
+        return await getPlaylistSongs("kugou", item.id)
+      }
     }
   } else {
     const user = await getUserInfo('netease')
