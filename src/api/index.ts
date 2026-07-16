@@ -302,9 +302,9 @@ export async function getPlaylistSongs(source: 'kugou' | 'netease', playlistId: 
       return data.data.songs.map((item: any) => ({
         pic: (item.cover || '').replace('{size}', '128') || (item.pic||'').replace('{size}', '128') || '',
         hash: item.FileHash || item.hash,
-        name: item.SongName || item.songname || item.name.slice(item.name.indexOf(' - ') + 3) || '',
-        artist: item.SingerName || item.singername || item.name.substring(0, item.name.indexOf(' - ')) || '',
-        album: item.AlbumName || item.albuminfo.name || '',
+        name: item.SongName || item.songname || (item.name || "").slice((item.name||"").indexOf(' - ') + 3) || '',
+        artist: item.SingerName || item.singername || (item.name || "").substring(0, (item.name||"").indexOf(' - ')) || '',
+        album: item.AlbumName || (item.albuminfo||"").name || '',
         duration: item.Duration || item.duration,
         source: 'kugou' as const,
       }))

@@ -84,7 +84,7 @@ const handleAvatarError = () => true
       <div>
         <el-button :icon="Minus" text class="titlebar-button" @click="window.getCurrentWindow().minimize()" />
         <el-button :icon="FullScreen" text class="titlebar-button" @click="window.getCurrentWindow().toggleMaximize()" />
-        <el-button :icon="Close" text class="titlebar-button" style="margin-right: 5px" @click="window.getCurrentWindow().close()" />
+        <el-button :icon="Close" text class="titlebar-button" style="margin-right: 5px" @click="window.getCurrentWindow().hide()" />
       </div>
     </div>
   </el-affix>
