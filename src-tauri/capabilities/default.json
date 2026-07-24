@@ -4,10 +4,15 @@
   "description": "Capability for the main window",
   "windows": ["main"],
   "permissions": [
+    "core:tray:default",
+    "core:menu:default",
     "core:window:default",
     "core:window:allow-hide",
+    "core:window:allow-close",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "core:app:allow-default-window-icon",
+    "core:event:allow-listen"
   ]
 }

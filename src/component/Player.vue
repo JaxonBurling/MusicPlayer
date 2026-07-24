@@ -7,6 +7,7 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { VideoPause, VideoPlay, Back, Right, List, Delete } from '@element-plus/icons-vue'
 import { useAppStore } from '../state'
+import { listen } from '@tauri-apps/api/event'
 
 const store = useAppStore()
 const audioRef = ref<HTMLAudioElement>()
@@ -24,7 +25,11 @@ const modeLabel = computed(() => {
   return map[store.playMode]
 })
 
-onMounted(() => { if (audioRef.value) store.setAudioElement(audioRef.value) })
+onMounted(async () => {
+  if (audioRef.value) store.setAudioElement(audioRef.value)
+  await listen("media-play", () => store.isPlaying = true)
+  await listen("media-pause", () => store.isPlaying = false)
+})
 
 watch(() => store.audioUrl, (url) => {
   if (url && audioRef.value) {
