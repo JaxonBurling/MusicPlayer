@@ -22,7 +22,22 @@ const options: TrayIconOptions = {
   title: "MusicPlayer",
   tooltip: "A convenient Music Player",
   icon: await defaultWindowIcon() as Image,
-  menu
+  showMenuOnLeftClick: false,
+  menu,
+  action: async (event) => {
+    if (event.type == "Click") {
+      // const windows = await window.getAllWindows();
+      // windows.forEach(async (w) => {
+      //   // if (await w.activityName() == "main") {
+      //   //   w.show()
+      //   // }
+      //   console.log(await w.activityName())
+      // });
+      const w = window.getCurrentWindow()
+      w.show()
+      await w.setFocus()
+    }
+  },
 };
 
 export async function init() {

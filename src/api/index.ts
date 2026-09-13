@@ -3,7 +3,7 @@
  * 封装酷狗(Kugou)和网易云(NetEase)音乐 API 的调用
  */
 
-const KUGOU_BASE = 'https://kugou.ovps.top'
+const KUGOU_BASE = 'https://kg.overpass.top'
 const NETEASE_BASE = 'https://wyy.ovps.top'
 
 export interface Song {
