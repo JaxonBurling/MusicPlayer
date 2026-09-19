@@ -1,10 +1,11 @@
 import { TrayIcon, TrayIconOptions } from "@tauri-apps/api/tray";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { Image } from "@tauri-apps/api/image";
-import { Menu } from "@tauri-apps/api/menu";
 import { window } from "@tauri-apps/api";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { moveWindow, Position } from "@tauri-apps/plugin-positioner";
+import { LogicalPosition, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { emit, emitTo } from "@tauri-apps/api/event";
 
 // 托盘菜单
 const trayWindow = new WebviewWindow('traymenu', {
@@ -15,20 +16,8 @@ const trayWindow = new WebviewWindow('traymenu', {
   resizable: false,
   decorations: false,
   alwaysOnTop: true,
-  skipTaskbar: true
-});
-
-const menu = await Menu.new({
-  items: [
-    {
-      id: "quit",
-      text: "退出",
-      action: async () => {
-        const windows = await window.getAllWindows();
-        windows.forEach((w) => w.close());
-      },
-    },
-  ],
+  skipTaskbar: true,
+  visible: false
 });
 
 const options: TrayIconOptions = {
@@ -36,8 +25,6 @@ const options: TrayIconOptions = {
   title: "MusicPlayer",
   tooltip: "A convenient Music Player",
   icon: await defaultWindowIcon() as Image,
-  showMenuOnLeftClick: false,
-  menu,
   action: async (event) => {
     if (event.type == "Click") {
       if (event.button == "Left"){
@@ -45,16 +32,20 @@ const options: TrayIconOptions = {
         w.show()
         await w.setFocus()
       } else if (event.button == "Right") {
-        moveWindow(Position.TrayLeft)
-        trayWindow.show()
-        trayWindow.setFocus()
+        console.log(event)
+        emitTo(trayWindow.label, "show", {
+          pos: event.position,
+        })
       }
     }
   },
 };
 
 export async function init() {
-  if (window.getCurrentWindow().label=="traymenu")return
+  const w = window.getCurrentWindow()
+  if (w.label == "traymenu") {
+    return
+  }
   trayWindow.once('tauri://created', () => {
     console.log('Successfully created Tray window');
   });
@@ -63,6 +54,12 @@ export async function init() {
   });
   trayWindow.onFocusChanged(({payload: focused}) => {
     if (!focused)trayWindow.hide()
+  })
+  trayWindow.listen<{ pos: PhysicalPosition }>("show", async({ payload }) => {
+    const winSize = await trayWindow.size()
+    trayWindow.setPosition(new PhysicalPosition(payload.pos.x-winSize.width, payload.pos.y-winSize.height))
+    trayWindow.show()
+    trayWindow.setFocus()
   })
   await TrayIcon.new(options)
 }
