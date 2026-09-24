@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { window } from '@tauri-apps/api'
+import { emit } from '@tauri-apps/api/event'
 
 import { ref, watch, onMounted, computed } from 'vue'
 import { RouterView } from 'vue-router'
@@ -24,19 +25,7 @@ const avatarUrl = computed(() => {
 
 // 初始化
 onMounted(async () => {
-  // 深色模式
-  const saved = localStorage.getItem('theme')
-  if (saved === 'dark') {
-    darkMode.value = true
-    document.documentElement.classList.add('dark')
-  } else if (saved === 'light') {
-    darkMode.value = false
-  } else {
-    const prefersDark = matchMedia('(prefers-color-scheme: dark)').matches
-    darkMode.value = prefersDark
-    if (prefersDark) document.documentElement.classList.add('dark')
-  }
-  appStore.darkMode = darkMode.value
+  darkMode.value = appStore.darkMode
 
   // 加载所有已登录音源的用户信息（保留当前音源）
   const origSource = appStore.source
@@ -59,9 +48,9 @@ watch(() => appStore.source, async () => {
 })
 
 watch(darkMode, (val) => {
-  appStore.darkMode = val
-  document.documentElement.classList.toggle('dark', val)
-  localStorage.setItem('theme', val ? 'dark' : 'light')
+  appStore.applyDarkMode(val)
+  // 广播给托盘菜单等其他窗口，保持主题同步
+  emit('theme-changed', val)
 })
 
 function onSearchEnter() {

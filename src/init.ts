@@ -3,15 +3,15 @@ import { defaultWindowIcon } from "@tauri-apps/api/app";
 import { Image } from "@tauri-apps/api/image";
 import { window } from "@tauri-apps/api";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { moveWindow, Position } from "@tauri-apps/plugin-positioner";
-import { LogicalPosition, PhysicalPosition } from "@tauri-apps/api/dpi";
-import { emit, emitTo } from "@tauri-apps/api/event";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { emitTo, listen } from "@tauri-apps/api/event";
+import { useAppStore } from "./state";
 
 // 托盘菜单
 const trayWindow = new WebviewWindow('traymenu', {
   url: '/traymenu',           // 窗口加载的路由或页面
   title: '托盘菜单',
-  width: 400,
+  width: 300,
   height: 300,
   resizable: false,
   decorations: false,
@@ -43,7 +43,13 @@ const options: TrayIconOptions = {
 
 export async function init() {
   const w = window.getCurrentWindow()
+  const appStore = useAppStore()
+  // 深色模式：所有窗口（含托盘菜单）统一初始化，未手动设置时跟随系统
+  const saved = localStorage.getItem('theme')
+  appStore.applyDarkMode(saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches)
   if (w.label == "traymenu") {
+    // 托盘菜单窗口：跟随主窗口的主题切换
+    await listen<boolean>('theme-changed', ({ payload }) => appStore.applyDarkMode(payload))
     return
   }
   trayWindow.once('tauri://created', () => {

@@ -12,10 +12,14 @@ export type PlayMode = 'list' | 'random' | 'single'
 export const useAppStore = defineStore('app', () => {
   // ========== 主题 ==========
   const darkMode = ref(false)
+  /** 应用指定深色模式（各窗口共用，保证主题同步） */
+  function applyDarkMode(value: boolean) {
+    darkMode.value = value
+    document.documentElement.classList.toggle('dark', value)
+    localStorage.setItem('theme', value ? 'dark' : 'light')
+  }
   function toggleDarkMode() {
-    darkMode.value = !darkMode.value
-    document.documentElement.classList.toggle('dark', darkMode.value)
-    localStorage.setItem('theme', darkMode.value ? 'dark' : 'light')
+    applyDarkMode(!darkMode.value)
   }
 
   // ========== 音源选择 ==========
@@ -206,7 +210,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    darkMode, toggleDarkMode,
+    darkMode, applyDarkMode, toggleDarkMode,
     source, toggleSource,
     kugouLogin, neteaseLogin, kugouUser, neteaseUser,
     isLoggedIn, currentUser, saveLogin, logout, loadUserInfo,

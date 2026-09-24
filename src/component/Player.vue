@@ -178,7 +178,7 @@ function onDelete(idx: number, e: Event) {
 <style scoped>
 .player-bar {
   position: fixed; bottom: 8px; left: 50%; transform: translateX(-50%);
-  width: calc(100% - 32px); max-width: 1000px; height: 64px;
+  width: calc(100% - 64px); max-width: 1000px; height: 64px;
   background: var(--el-bg-color); border: 1px solid var(--el-border-color-light);
   border-radius: 14px; display: flex; align-items: center; padding: 0 16px;
   z-index: 100; backdrop-filter: blur(12px); box-shadow: 0 2px 16px rgba(0,0,0,0.08);
