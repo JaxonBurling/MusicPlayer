@@ -1,10 +1,12 @@
 /**
  * API 服务层
- * 封装酷狗(Kugou)和网易云(NetEase)音乐 API 的调用
+ * 通过本地 Node 服务（server/index.ts）调用酷狗(Kugou)和网易云(NetEase)音乐接口
+ *
+ * 前端只与本地服务通信，真实请求由 Node 进程内的 src/kugou、src/wyy 库完成。
  */
 
-const KUGOU_BASE = 'https://kg.overpass.top'
-const NETEASE_BASE = 'https://wyy.ovps.top'
+const API_BASE =
+  ((import.meta as any).env?.VITE_MUSIC_API as string) || 'http://127.0.0.1:3080'
 
 export interface Song {
   id?: number
@@ -51,17 +53,40 @@ export interface Playlist {
   source: 'kugou' | 'netease'
 }
 
-async function request(url: string, cookie?: string, timeout = 8000): Promise<any> {
+/**
+ * 调用本地服务的接口
+ * @param source 音源
+ * @param module 库中的模块名（与 module/ 下的文件名一致）
+ * @param query 查询参数
+ * @param cookie 登录态 cookie（可选）
+ * @returns 模块原始响应体
+ */
+async function call(
+  source: 'kugou' | 'netease',
+  module: string,
+  query: Record<string, any> = {},
+  cookie?: string,
+  timeout = 15000,
+): Promise<any> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeout)
-  let finalUrl = url
-  if (cookie) {
-    finalUrl += (url.includes('?') ? '&' : '?') + 'cookie=' + encodeURIComponent(cookie)
-  }
   try {
-    const res = await fetch(finalUrl, { signal: controller.signal })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
+    const res = await fetch(`${API_BASE}/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source,
+        module,
+        query: cookie ? { ...query, cookie } : query,
+      }),
+      signal: controller.signal,
+    })
+    const text = await res.text()
+    try {
+      return text ? JSON.parse(text) : {}
+    } catch {
+      return text
+    }
   } finally {
     clearTimeout(timer)
   }
@@ -69,7 +94,7 @@ async function request(url: string, cookie?: string, timeout = 8000): Promise<an
 
 // ===================== Cookie 管理 =====================
 
-let cookieStore: Record<string, string> = {
+const cookieStore: Record<string, string> = {
   kugou: localStorage.getItem('kugou_cookie') || '',
   netease: localStorage.getItem('netease_cookie') || '',
 }
@@ -98,8 +123,12 @@ export async function searchSongs(params: SearchParams): Promise<Song[]> {
 async function searchKugou(params: SearchParams, cookie: string): Promise<Song[]> {
   const page = params.page || 1
   const pagesize = params.limit || 30
-  const url = `${KUGOU_BASE}/search?keywords=${encodeURIComponent(params.keywords)}&page=${page}&pagesize=${pagesize}`
-  const data = await request(url, cookie)
+  const data = await call(
+    'kugou',
+    'search',
+    { keywords: params.keywords, page, pagesize, type: 'song' },
+    cookie,
+  )
   if (data.error_code || !data.data?.lists) return []
   return data.data.lists.map((item: any) => ({
     hash: item.FileHash || item.hash,
@@ -115,8 +144,12 @@ async function searchKugou(params: SearchParams, cookie: string): Promise<Song[]
 async function searchNetease(params: SearchParams, cookie: string): Promise<Song[]> {
   const limit = params.limit || 30
   const offset = ((params.page || 1) - 1) * limit
-  const url = `${NETEASE_BASE}/cloudsearch?keywords=${encodeURIComponent(params.keywords)}&limit=${limit}&offset=${offset}&type=1`
-  const data = await request(url, cookie)
+  const data = await call(
+    'netease',
+    'cloudsearch',
+    { keywords: params.keywords, limit, offset, type: 1 },
+    cookie,
+  )
   if (data.code !== 200 || !data.result?.songs) return []
   return data.result.songs.map((item: any) => ({
     id: item.id,
@@ -138,14 +171,15 @@ export async function getSongUrl(song: Song): Promise<SongUrlResult> {
 
 async function getKugouUrl(song: Song, cookie: string): Promise<SongUrlResult> {
   if (!song.hash) return { url: '', canPlay: false }
-  const data = await request(`${KUGOU_BASE}/song/url?hash=${song.hash}`, cookie)
-  if (data.errorcode || !data?.url) return { url: '', canPlay: false }
-  return { url: data.url[0], canPlay: true }
+  const data = await call('kugou', 'song_url', { hash: song.hash }, cookie)
+  const url = data?.url?.[0] || data?.data?.[0]?.url || data?.data?.url?.[0]
+  if (data?.errorcode || data?.error_code || !url) return { url: '', canPlay: false }
+  return { url, canPlay: true }
 }
 
 async function getNeteaseUrl(song: Song, cookie: string): Promise<SongUrlResult> {
   if (!song.id) return { url: '', canPlay: false }
-  const data = await request(`${NETEASE_BASE}/song/url/v1?id=${song.id}&level=exhigh`, cookie)
+  const data = await call('netease', 'song_url_v1', { id: song.id, level: 'exhigh' }, cookie)
   if (data.code !== 200 || !data.data?.[0]?.url) return { url: '', canPlay: false }
   return { url: data.data[0].url, canPlay: true }
 }
@@ -154,7 +188,7 @@ async function getNeteaseUrl(song: Song, cookie: string): Promise<SongUrlResult>
 
 export async function getLyric(song: Song): Promise<string> {
   if (song.source === 'netease' && song.id) {
-    const data = await request(`${NETEASE_BASE}/lyric?id=${song.id}`, getCookie('netease'))
+    const data = await call('netease', 'lyric', { id: song.id }, getCookie('netease'))
     if (data.code === 200 && data.lrc?.lyric) return data.lrc.lyric
   }
   return ''
@@ -164,25 +198,24 @@ export async function getLyric(song: Song): Promise<string> {
 
 /** 获取二维码 key 和图片（酷狗 key 接口直接返回图片，无需二次请求） */
 export async function getQrKey(source: 'kugou' | 'netease'): Promise<{ key: string; image?: string }> {
-  const base = source === 'kugou' ? KUGOU_BASE : NETEASE_BASE
-  const data = await request(`${base}/login/qr/key`)
   if (source === 'kugou') {
+    const data = await call('kugou', 'login_qr_key')
     const d = data.data || {}
     return { key: d.qrcode || d.token || d.key || '', image: d.qrcode_img || '' }
   }
+  const data = await call('netease', 'login_qr_key')
   return { key: data.data?.unikey || '' }
 }
 
 /** 生成二维码（仅网易云需要此步骤；酷狗已在 getQrKey 返回图片） */
 export async function createQr(source: 'kugou' | 'netease', key: string): Promise<string> {
-  const base = source === 'kugou' ? KUGOU_BASE : NETEASE_BASE
   if (source === 'kugou') {
     // 酷狗降级：如果 getQrKey 没返回图片，再调 create 接口
-    const data = await request(`${base}/login/qr/create?key=${key}&qrimg=true`)
+    const data = await call('kugou', 'login_qr_create', { key, qrimg: true })
     const d = data.data || data
-    return d?.qrcode_img || d?.qrcode_base64 || d?.qrcode || d?.image || d?.qrimg || ''
+    return d?.qrcode_img || d?.qrcode_base64 || d?.base64 || d?.qrcode || d?.image || d?.qrimg || ''
   }
-  const data = await request(`${base}/login/qr/create?key=${key}&qrimg=true`)
+  const data = await call('netease', 'login_qr_create', { key, qrimg: true })
   return data.data?.qrimg || ''
 }
 
@@ -190,16 +223,15 @@ export async function checkQr(source: 'kugou' | 'netease', key: string): Promise
   status: 'waiting' | 'scanned' | 'expired' | 'success'
   credential: LoginCredential | null
 }> {
-  const base = source === 'kugou' ? KUGOU_BASE : NETEASE_BASE
-  const data = await request(`${base}/login/qr/check?key=${key}&timestamp=${Date.now()}`)
-
   if (source === 'kugou') {
+    const data = await call('kugou', 'login_qr_check', { key, timestamp: Date.now() })
     const code = data.data?.status ?? data.status ?? 0
     if (code === 4) return { status: 'success', credential: { token: data.data?.token, userId: data.data?.userid } }
     if (code === 2) return { status: 'scanned', credential: null }
     if (code === 0) return { status: 'expired', credential: null }
     return { status: 'waiting', credential: null }
   } else {
+    const data = await call('netease', 'login_qr_check', { key, timestamp: Date.now() })
     const code = data.code
     if (code === 803) return { status: 'success', credential: { cookie: data.cookie } }
     if (code === 802) return { status: 'scanned', credential: null }
@@ -209,21 +241,21 @@ export async function checkQr(source: 'kugou' | 'netease', key: string): Promise
 }
 
 export async function sendCaptcha(source: 'kugou' | 'netease', phone: string): Promise<boolean> {
-  const base = source === 'kugou' ? KUGOU_BASE : NETEASE_BASE
-  const param = source === 'kugou' ? 'mobile' : 'phone'
-  const data = await request(`${base}/captcha/sent?${param}=${phone}`)
+  const data =
+    source === 'kugou'
+      ? await call('kugou', 'captcha_sent', { mobile: phone })
+      : await call('netease', 'captcha_sent', { phone })
   return data.code === 200 || data.status === 1 || !!data.data
 }
 
 export async function loginByPhone(
   source: 'kugou' | 'netease', phone: string, code: string
 ): Promise<LoginCredential | null> {
-  const base = source === 'kugou' ? KUGOU_BASE : NETEASE_BASE
-  const param = source === 'kugou' ? 'mobile' : 'phone'
-  const data = await request(`${base}/login/cellphone?${param}=${phone}&${source === 'kugou' ? 'code' : 'captcha'}=${encodeURIComponent(code)}`)
   if (source === 'kugou') {
+    const data = await call('kugou', 'login_cellphone', { mobile: phone, code })
     if (data.status === 1 || data.data?.token) return { token: data.data?.token, userId: data.data?.userid }
   } else {
+    const data = await call('netease', 'login_cellphone', { phone, captcha: code })
     if (data.code === 200) return { cookie: data.cookie, token: data.token }
   }
   return null
@@ -235,7 +267,7 @@ export async function getUserInfo(source: 'kugou' | 'netease'): Promise<UserInfo
   const cookie = getCookie(source)
   if (!cookie) return null
   if (source === 'kugou') {
-    const data = await request(`${KUGOU_BASE}/user/detail`, cookie)
+    const data = await call('kugou', 'user_detail', {}, cookie)
     if (data.status === 1 && data.data) {
       return {
         id: data.data.userid || data.data.userId,
@@ -244,7 +276,7 @@ export async function getUserInfo(source: 'kugou' | 'netease'): Promise<UserInfo
       }
     }
   } else {
-    const data = await request(`${NETEASE_BASE}/user/account`, cookie)
+    const data = await call('netease', 'user_account', {}, cookie)
     if (data.code === 200 && data.profile) {
       return {
         id: data.profile.userId,
@@ -264,7 +296,7 @@ export async function getUserPlaylists(source: 'kugou' | 'netease'): Promise<Pla
   const cookie = getCookie(source)
   if (!cookie) return []
   if (source === 'kugou') {
-    const data = await request(`${KUGOU_BASE}/user/playlist`, cookie)
+    const data = await call('kugou', 'user_playlist', {}, cookie)
     if (data.status === 1 && data.data?.info) {
       return data.data.info.map((item: any) => ({
         id: item.global_collection_id || item.list_create_listid || item.listid,
@@ -278,7 +310,7 @@ export async function getUserPlaylists(source: 'kugou' | 'netease'): Promise<Pla
     // 需要用户 uid，从 cookie 或用户信息中获取
     const user = await getUserInfo('netease')
     if (!user) return []
-    const data = await request(`${NETEASE_BASE}/user/playlist?uid=${user.id}`, cookie)
+    const data = await call('netease', 'user_playlist', { uid: user.id }, cookie)
     if (data.code === 200 && data.playlist) {
       return data.playlist.map((item: any) => ({
         id: item.id,
@@ -297,20 +329,30 @@ export async function getPlaylistSongs(source: 'kugou' | 'netease', playlistId: 
   const cookie = getCookie(source)
   if (!cookie) return []
   if (source === 'kugou') {
-    const data = await request(`${KUGOU_BASE}/playlist/track/all?id=${playlistId}&page=1&pagesize=50`, cookie)
+    const data = await call(
+      'kugou',
+      'playlist_track_all',
+      { id: playlistId, page: 1, pagesize: 50 },
+      cookie,
+    )
     if (data.status === 1 && data.data?.songs) {
       return data.data.songs.map((item: any) => ({
-        pic: (item.cover || '').replace('{size}', '128') || (item.pic||'').replace('{size}', '128') || '',
+        pic: (item.cover || '').replace('{size}', '128') || (item.pic || '').replace('{size}', '128') || '',
         hash: item.FileHash || item.hash,
-        name: item.SongName || item.songname || (item.name || "").slice((item.name||"").indexOf(' - ') + 3) || '',
-        artist: item.SingerName || item.singername || (item.name || "").substring(0, (item.name||"").indexOf(' - ')) || '',
-        album: item.AlbumName || (item.albuminfo||"").name || '',
+        name: item.SongName || item.songname || (item.name || "").slice((item.name || "").indexOf(' - ') + 3) || '',
+        artist: item.SingerName || item.singername || (item.name || "").substring(0, (item.name || "").indexOf(' - ')) || '',
+        album: item.AlbumName || (item.albuminfo || "").name || '',
         duration: item.Duration || item.duration,
         source: 'kugou' as const,
       }))
     }
   } else {
-    const data = await request(`${NETEASE_BASE}/playlist/track/all?id=${playlistId}&limit=50`, cookie)
+    const data = await call(
+      'netease',
+      'playlist_track_all',
+      { id: playlistId, limit: 50 },
+      cookie,
+    )
     if (data.code === 200 && data.songs) {
       return data.songs.map((item: any) => ({
         id: item.id,
@@ -341,11 +383,11 @@ export async function getLikedSongs(source: 'kugou' | 'netease'): Promise<Song[]
   } else {
     const user = await getUserInfo('netease')
     if (!user) return []
-    const data = await request(`${NETEASE_BASE}/likelist?uid=${user.id}`, cookie)
+    const data = await call('netease', 'likelist', { uid: user.id }, cookie)
     if (data.code === 200 && data.ids?.length > 0) {
       // 批量获取歌曲详情（最多 50 首）
       const ids = data.ids.slice(0, 50).join(',')
-      const detailData = await request(`${NETEASE_BASE}/song/detail?ids=${ids}`, cookie)
+      const detailData = await call('netease', 'song_detail', { ids }, cookie)
       if (detailData.code === 200 && detailData.songs) {
         return detailData.songs.map((item: any) => ({
           id: item.id,

@@ -18,6 +18,16 @@
     "core:window:allow-start-dragging",
     "core:app:allow-default-window-icon",
     "core:webview:default",
-    "core:webview:allow-create-webview-window"
+    "core:webview:allow-create-webview-window",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/server",
+          "sidecar": true
+        }
+      ]
+    },
+    "shell:allow-kill"
   ]
 }

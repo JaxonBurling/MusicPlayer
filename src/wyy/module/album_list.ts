@@ -1,0 +1,18 @@
+import type { WyyQuery, WyyRequest } from '../util/types';
+
+// 数字专辑-新碟上架
+import createOption from '../util/option';
+export default (query: WyyQuery, request: WyyRequest) => {
+  const data = {
+    limit: query.limit || 30,
+    offset: query.offset || 0,
+    total: true,
+    area: query.area || 'ALL', //ALL:全部,ZH:华语,EA:欧美,KR:韩国,JP:日本
+    type: query.type,
+  }
+  return request(
+    `/api/vipmall/albumproduct/list`,
+    data,
+    createOption(query, 'weapi'),
+  )
+}

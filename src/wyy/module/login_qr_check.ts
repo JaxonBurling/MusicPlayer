@@ -1,0 +1,32 @@
+import type { WyyQuery, WyyRequest } from '../util/types';
+
+import createOption from '../util/option';
+export default async (query: WyyQuery, request: WyyRequest) => {
+  const data = {
+    key: query.key,
+    type: 3,
+  }
+  let result: any
+  try {
+    result = await request(
+      `/api/login/qrcode/client/login`,
+      data,
+      createOption(query),
+    )
+    result = {
+      status: 200,
+      body: {
+        ...result.body,
+        cookie: result.cookie.join(';'),
+      },
+      cookie: result.cookie,
+    }
+    return result
+  } catch (error) {
+    return {
+      status: 200,
+      body: {},
+      cookie: result.cookie,
+    }
+  }
+}
