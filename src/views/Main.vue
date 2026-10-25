@@ -45,28 +45,32 @@ function goLogin() { router.push('/login') }
   <div class="main-page" v-loading="store.homeLoading">
     <!-- 已登录：平台歌单 -->
     <section v-if="store.isLoggedIn() && store.userPlaylists.length > 0" class="section">
-      <div class="section-header">
-        <h2>{{ store.source === 'kugou' ? '酷狗' : '网易云' }}歌单</h2>
-        <span class="count">{{ store.userPlaylists.length }} 个</span>
-      </div>
-      <div class="playlist-scroll">
-        <div
-          v-for="pl in store.userPlaylists"
-          :key="pl.id"
-          class="pl-card"
-          @click="playPlaylist(pl)"
-        >
-          <div class="pl-cover">
-            <el-image v-if="pl.coverUrl" :src="pl.coverUrl" fit="cover" />
-            <el-icon v-else :size="32" color="var(--el-text-color-placeholder)"><VideoPlay /></el-icon>
-            <div class="pl-overlay">
-              <el-button circle :icon="VideoPlay" size="small" class="overlay-btn" />
-            </div>
-          </div>
-          <span class="pl-title">{{ pl.name }}</span>
-          <span class="pl-count">{{ pl.trackCount }} 首</span>
+        <div class="section-header">
+          <h2>{{ store.source === 'kugou' ? '酷狗' : '网易云' }}歌单</h2>
+          <span class="count">{{ store.userPlaylists.length }} 个</span>
         </div>
-      </div>
+        <div style="
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;">
+            <el-card v-for="pl in store.userPlaylists"
+            :key="pl.id"
+            @click="playPlaylist(pl)"
+            style="width: 49%; margin-bottom: 5px"
+            body-class="pl-card">
+                <div class="pl-cover">
+                    <el-image v-if="pl.coverUrl" :src="pl.coverUrl" fit="cover" />
+                    <el-icon v-else :size="32" color="var(--el-text-color-placeholder)"><VideoPlay /></el-icon>
+                    <div class="pl-overlay">
+                    <el-button circle :icon="VideoPlay" size="small" class="overlay-btn" />
+                    </div>
+                </div>
+                <div style="display: flex;flex-direction: column;align-items: flex-end">
+                    <span class="pl-title">{{ pl.name }}</span>
+                    <span class="pl-count">{{ pl.trackCount }} 首</span>
+                </div>
+            </el-card>
+        </div>
     </section>
 
     <!-- 未登录提示 -->
@@ -182,10 +186,17 @@ function goLogin() { router.push('/login') }
 .playlist-scroll { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; }
 .playlist-scroll::-webkit-scrollbar { height: 4px; }
 .playlist-scroll::-webkit-scrollbar-thumb { background: var(--el-border-color); border-radius: 2px; }
-.pl-card { flex-shrink: 0; width: 160px; cursor: pointer; border-radius: 8px; transition: background 0.2s; }
-.pl-card:hover { background: var(--el-fill-color-light); }
+:deep(.pl-card) {
+    flex-shrink: 0;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 0.2s;
+    display: flex;
+    justify-content: space-between
+}
+:deep(.pl-card:hover) { background: var(--el-fill-color-light); }
 .pl-cover {
-  position: relative; width: 160px; height: 160px; border-radius: 8px;
+  position: relative; width: 50px; height: 50px; border-radius: 8px;
   overflow: hidden; background: var(--el-fill-color-light);
   display: flex; align-items: center; justify-content: center;
 }

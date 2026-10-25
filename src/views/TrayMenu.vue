@@ -1,7 +1,7 @@
 <template>
 <div class="tmenu">
     <el-space style="height: 100px;justify-content: center;">
-        <el-button :icon="ArrowLeftBold" text />
+        <el-button :icon="ArrowLeftBold" text @click="emit('media-prev')" />
         <el-button text circle class="play-toggle" @click="togglePlay">
             <span class="icon-slot" :class="{ playing }">
                 <!-- 播放：三角 -->
@@ -15,7 +15,7 @@
                 </svg>
             </span>
         </el-button>
-        <el-button :icon="ArrowRightBold" text />
+        <el-button :icon="ArrowRightBold" text @click="emit('media-next')" />
     </el-space>
     <el-button
     v-for="b in menus"

@@ -4,6 +4,3 @@ dist/
 
 components.d.ts
 auto-imports.d.ts
-
-# 本地 API 服务打包产物
-server/dist/

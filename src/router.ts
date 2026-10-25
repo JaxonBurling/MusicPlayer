@@ -14,6 +14,7 @@ export const router = createRouter({
         { path: '/search', name: 'search', component: () => import('./views/Search.vue') },
         { path: '/login', name: 'login', component: () => import('./views/Login.vue') },
         { path: '/user', name: 'user', component: () => import('./views/User.vue') },
+        { path: '/songlist', name: 'songlist', component: () => import('./views/Songlist.vue') },
       ]
     },
 

@@ -29,6 +29,8 @@ onMounted(async () => {
   if (audioRef.value) store.setAudioElement(audioRef.value)
   await listen("media-play", () => store.isPlaying = true)
   await listen("media-pause", () => store.isPlaying = false)
+  await listen("media-prev", () => store.prev())
+  await listen("media-next", () => store.next())
 })
 
 watch(() => store.audioUrl, (url) => {
