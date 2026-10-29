@@ -6,10 +6,10 @@
     "linux"
   ],
   "windows": [
-    "main",
-    "traymenu"
+    "main"
   ],
   "permissions": [
-    "positioner:default"
+    "fs:default",
+    "http:default"
   ]
 }

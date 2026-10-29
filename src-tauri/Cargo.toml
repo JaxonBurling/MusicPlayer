@@ -19,11 +19,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
+# Keep these in sync with the @tauri-apps/plugin-* versions in package.json,
+# otherwise `tauri dev` refuses to run due to the major/minor version check.
 tauri-plugin-http = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-positioner = { version = "2.0.0", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-positioner = "2"
+tauri-plugin-fs = "2"

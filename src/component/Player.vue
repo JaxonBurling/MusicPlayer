@@ -6,6 +6,7 @@
  */
 import { ref, watch, onMounted, computed } from 'vue'
 import { VideoPause, VideoPlay, Back, Right, List, Delete } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useAppStore } from '../state'
 import { listen } from '@tauri-apps/api/event'
 
@@ -33,11 +34,18 @@ onMounted(async () => {
   await listen("media-next", () => store.next())
 })
 
-watch(() => store.audioUrl, (url) => {
-  if (url && audioRef.value) {
-    audioRef.value.src = url
-    audioRef.value.play().catch(() => { store.isPlaying = false })
+watch(() => store.audioUrl, (url, oldUrl) => {
+  // 切歌后释放上一首的 blob URL，避免内存持续增长
+  if (oldUrl?.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(oldUrl), 3000)
+  if (!audioRef.value) return
+  if (!url) {
+    // 新歌尚未拿到可播放地址：清掉旧音源，避免误播放上一首
+    audioRef.value.removeAttribute('src')
+    audioRef.value.load()
+    return
   }
+  audioRef.value.src = url
+  audioRef.value.play().catch(() => { store.isPlaying = false })
 })
 
 watch(() => store.isPlaying, (playing) => {
@@ -58,6 +66,22 @@ function onTimeUpdate() {
   }
 }
 function onEnded() { store.next() }
+
+// 离线时远程地址可能加载失败：连续失败 3 次就停止自动切歌，避免无限跳过
+let lastErrorAt = 0
+let errorStreak = 0
+function onAudioError() {
+  const now = Date.now()
+  errorStreak = now - lastErrorAt < 2000 ? errorStreak + 1 : 1
+  lastErrorAt = now
+  if (errorStreak >= 3) {
+    errorStreak = 0
+    store.isPlaying = false
+    ElMessage.error('播放失败，请检查网络或等待歌曲缓存完成')
+    return
+  }
+  store.next()
+}
 function onLoadedMetadata() {
   if (audioRef.value) { duration.value = audioRef.value.duration; audioRef.value.volume = store.volume }
 }
@@ -94,7 +118,7 @@ function onDelete(idx: number, e: Event) {
 
 <template>
   <div class="player-bar">
-    <audio ref="audioRef" @timeupdate="onTimeUpdate" @ended="onEnded" @loadedmetadata="onLoadedMetadata" @error="() => store.next()" />
+    <audio ref="audioRef" @timeupdate="onTimeUpdate" @ended="onEnded" @loadedmetadata="onLoadedMetadata" @error="onAudioError" />
 
     <!-- 左侧 -->
     <div class="player-left">

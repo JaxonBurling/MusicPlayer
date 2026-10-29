@@ -8,6 +8,7 @@ import { onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '../state'
 import { VideoPlay, Plus, User } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { getPlaylistSongs } from '../api/index'
 import type { Song, Playlist } from '../api/index'
 
@@ -28,10 +29,26 @@ function playFavorite(_song: Song, index: number) {
 }
 
 async function playPlaylist(pl: Playlist) {
-  const songs = await getPlaylistSongs(store.source, pl.id)
+  const songs = await getPlaylistSongs(pl.source, pl.id)
   if (songs.length > 0) {
     store.playList(songs)
+  } else {
+    ElMessage.warning('歌单暂无歌曲，或当前离线且还没有缓存')
   }
+}
+
+/** 点击歌单卡片进入歌单详情页 */
+function openPlaylist(pl: Playlist) {
+  router.push({
+    name: 'songlist',
+    query: {
+      id: String(pl.id),
+      source: pl.source,
+      name: pl.name,
+      cover: pl.coverUrl,
+      count: String(pl.trackCount),
+    },
+  })
 }
 
 function playLiked(index: number) {
@@ -42,7 +59,8 @@ function goLogin() { router.push('/login') }
 </script>
 
 <template>
-  <div class="main-page" v-loading="store.homeLoading">
+<el-skeleton style="width: 240px" :loading="store.homeLoading" animated>
+  <div class="main-page">
     <!-- 已登录：平台歌单 -->
     <section v-if="store.isLoggedIn() && store.userPlaylists.length > 0" class="section">
         <div class="section-header">
@@ -55,14 +73,14 @@ function goLogin() { router.push('/login') }
         justify-content: space-between;">
             <el-card v-for="pl in store.userPlaylists"
             :key="pl.id"
-            @click="playPlaylist(pl)"
+            @click="openPlaylist(pl)"
             style="width: 49%; margin-bottom: 5px"
             body-class="pl-card">
                 <div class="pl-cover">
                     <el-image v-if="pl.coverUrl" :src="pl.coverUrl" fit="cover" />
                     <el-icon v-else :size="32" color="var(--el-text-color-placeholder)"><VideoPlay /></el-icon>
                     <div class="pl-overlay">
-                    <el-button circle :icon="VideoPlay" size="small" class="overlay-btn" />
+                    <el-button circle :icon="VideoPlay" size="small" class="overlay-btn" @click.stop="playPlaylist(pl)" />
                     </div>
                 </div>
                 <div style="display: flex;flex-direction: column;align-items: flex-end">
@@ -163,6 +181,7 @@ function goLogin() { router.push('/login') }
       </div>
     </section>
   </div>
+</el-skeleton>
 </template>
 
 <style scoped>

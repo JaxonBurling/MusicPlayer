@@ -9,6 +9,7 @@ import QRCode from 'qrcode'
 import { KugouClient } from './kugou'
 import { NeteaseClient } from './netease'
 import { httpFetch } from './http'
+import { cachedQuery, invalidateCache, readCache, writeCache } from '../cache'
 
 export interface Song {
   id?: number
@@ -113,7 +114,17 @@ export function clearCookie(source: 'kugou' | 'netease') {
 // ===================== 搜索 =====================
 
 export async function searchSongs(params: SearchParams): Promise<Song[]> {
-  return params.source === 'kugou' ? searchKugou(params) : searchNetease(params)
+  const keyword = params.keywords.trim()
+  if (!keyword) return []
+  const key = `search:${params.source}:${params.page || 1}:${params.limit || 30}:${keyword.toLowerCase()}`
+  const songs = await cachedQuery(
+    key,
+    () => (params.source === 'kugou' ? searchKugou(params) : searchNetease(params)),
+    [],
+    { ttl: 5 * 60_000, accept: (list) => list.length > 0 },
+  )
+  // 返回副本，避免调用方修改播放队列时污染缓存
+  return songs.map((song) => ({ ...song }))
 }
 
 async function searchKugou(params: SearchParams): Promise<Song[]> {
@@ -163,7 +174,15 @@ async function searchNetease(params: SearchParams): Promise<Song[]> {
 // ===================== 歌曲 URL =====================
 
 export async function getSongUrl(song: Song): Promise<SongUrlResult> {
-  return song.source === 'kugou' ? getKugouUrl(song) : getNeteaseUrl(song)
+  const identity = song.source === 'kugou' ? song.hash : song.id
+  if (!identity) return { url: '', canPlay: false }
+  const result = await cachedQuery(
+    `url:${song.source}:${identity}`,
+    () => (song.source === 'kugou' ? getKugouUrl(song) : getNeteaseUrl(song)),
+    { url: '', canPlay: false },
+    { ttl: 30 * 60_000, accept: (item) => item.canPlay },
+  )
+  return { ...result }
 }
 
 async function getKugouUrl(song: Song): Promise<SongUrlResult> {
@@ -216,8 +235,17 @@ async function ensureNeteaseAnonymous(): Promise<void> {
 
 export async function getLyric(song: Song): Promise<string> {
   if (song.source !== 'netease' || !song.id) return ''
+  return cachedQuery(
+    `lyric:netease:${song.id}`,
+    () => fetchNeteaseLyric(song.id as number),
+    '',
+    { ttl: 7 * 24 * 60 * 60_000, accept: (lyric) => lyric.length > 0 },
+  )
+}
+
+async function fetchNeteaseLyric(id: number): Promise<string> {
   try {
-    const data: any = await ne.lyric(song.id)
+    const data: any = await ne.lyric(id)
     if (data.code === 200 && data.lrc?.lyric) return data.lrc.lyric
   } catch {
     // ignore
@@ -344,8 +372,19 @@ export async function loginByPhone(
 // ===================== 用户信息 =====================
 
 export async function getUserInfo(source: 'kugou' | 'netease'): Promise<UserInfo | null> {
+  const authed = source === 'kugou' ? kugouAuthed() : neteaseAuthed()
+  if (!authed) return null
+  const info = await cachedQuery(
+    `user:${source}`,
+    () => fetchUserInfo(source),
+    null,
+    { ttl: 10 * 60_000, accept: (user) => !!user },
+  )
+  return info ? { ...info } : null
+}
+
+async function fetchUserInfo(source: 'kugou' | 'netease'): Promise<UserInfo | null> {
   if (source === 'kugou') {
-    if (!kugouAuthed()) return null
     try {
       const res = await kg.getUserDetail()
       const data: any = res.body
@@ -362,7 +401,6 @@ export async function getUserInfo(source: 'kugou' | 'netease'): Promise<UserInfo
     return null
   }
 
-  if (!neteaseAuthed()) return null
   try {
     const data: any = await ne.userAccount()
     if (data.code === 200 && data.profile) {
@@ -383,8 +421,18 @@ export async function getUserInfo(source: 'kugou' | 'netease'): Promise<UserInfo
 
 /** 获取用户歌单列表 */
 export async function getUserPlaylists(source: 'kugou' | 'netease'): Promise<Playlist[]> {
+  if (source === 'kugou' && !kugouAuthed()) return []
+  const playlists = await cachedQuery(
+    `playlists:${source}`,
+    () => fetchUserPlaylists(source),
+    [],
+    { ttl: 10 * 60_000, accept: (list) => list.length > 0 },
+  )
+  return playlists.map((playlist) => ({ ...playlist }))
+}
+
+async function fetchUserPlaylists(source: 'kugou' | 'netease'): Promise<Playlist[]> {
   if (source === 'kugou') {
-    if (!kugouAuthed()) return []
     try {
       const res = await kg.getUserPlaylists({ page: 1, pagesize: 100 })
       const data: any = res.body
@@ -427,6 +475,19 @@ export async function getPlaylistSongs(
   source: 'kugou' | 'netease',
   playlistId: string | number,
 ): Promise<Song[]> {
+  const songs = await cachedQuery(
+    `playlist:${source}:${playlistId}`,
+    () => fetchPlaylistSongs(source, playlistId),
+    [],
+    { ttl: 30 * 60_000, accept: (list) => list.length > 0 },
+  )
+  return songs.map((song) => ({ ...song }))
+}
+
+async function fetchPlaylistSongs(
+  source: 'kugou' | 'netease',
+  playlistId: string | number,
+): Promise<Song[]> {
   if (source === 'kugou') {
     if (!kugouAuthed()) return []
     try {
@@ -441,7 +502,7 @@ export async function getPlaylistSongs(
           mode: 1,
           personal_switch: 1,
           extend_fields: 'abtags,hot_cmt,popularization',
-          pagesize: 50,
+          pagesize: 100,
           global_collection_id: playlistId,
         },
         encryptType: 'android',
@@ -474,7 +535,7 @@ export async function getPlaylistSongs(
 
   if (!neteaseAuthed()) return []
   try {
-    const data: any = await ne.playlistTrackAll(playlistId, { limit: 50, offset: 0 })
+    const data: any = await ne.playlistTrackAll(playlistId, { limit: 500, offset: 0 })
     if (data.code === 200 && data.songs) {
       return data.songs.map((item: any) => ({
         id: item.id,
@@ -494,6 +555,17 @@ export async function getPlaylistSongs(
 
 /** 获取用户收藏/喜欢的歌曲 */
 export async function getLikedSongs(source: 'kugou' | 'netease'): Promise<Song[]> {
+  if (source === 'kugou' && !kugouAuthed()) return []
+  const songs = await cachedQuery(
+    `liked:${source}`,
+    () => fetchLikedSongs(source),
+    [],
+    { ttl: 10 * 60_000, accept: (list) => list.length > 0 },
+  )
+  return songs.map((song) => ({ ...song }))
+}
+
+async function fetchLikedSongs(source: 'kugou' | 'netease'): Promise<Song[]> {
   if (source === 'kugou') {
     // 酷狗：获取歌单中的"我喜欢"
     const playlists = await getUserPlaylists('kugou')
@@ -528,4 +600,35 @@ export async function getLikedSongs(source: 'kugou' | 'netease'): Promise<Song[]
     // ignore
   }
   return []
+}
+
+// ===================== 歌单操作 / 缓存管理 =====================
+
+/**
+ * 将歌曲添加到平台歌单。
+ * 目前仅网易云提供官方添加接口；酷狗返回 false，由界面提示。
+ */
+export async function addSongToPlaylist(playlist: Playlist, song: Song): Promise<boolean> {
+  if (playlist.source !== 'netease' || !song.id) return false
+  try {
+    const data: any = await ne.playlistTrackAdd(playlist.id, song.id)
+    if (data.code !== 200) return false
+    // 同步本地歌单详情缓存，离线时也能立刻看到刚添加的歌曲
+    const key = `playlist:netease:${playlist.id}`
+    const hit = readCache<Song[]>(key)
+    if (hit && !hit.data.some((item) => item.id === song.id)) {
+      writeCache(key, [...hit.data, { ...song }])
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 清理某个音源的用户级缓存（登录 / 退出账号时调用，避免串号） */
+export function clearUserCache(source: 'kugou' | 'netease'): void {
+  invalidateCache(`user:${source}`)
+  invalidateCache(`playlists:${source}`)
+  invalidateCache(`liked:${source}`)
+  invalidateCache(`playlist:${source}:`)
 }

@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import type { Song, UserInfo, Playlist } from './api/index'
 import {
   getSongUrl, getUserInfo as fetchUserInfo,
   getCookie, setCookie, clearCookie,
-  getUserPlaylists, getLikedSongs,
+  getUserPlaylists, getLikedSongs, clearUserCache,
 } from './api/index'
+import { getCachedAudioUrl, cacheAudio } from './audio-cache'
 
 export type PlayMode = 'list' | 'random' | 'single'
 
@@ -23,7 +25,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // ========== 音源选择 ==========
-  const source = ref<'kugou' | 'netease'>('netease')
+  const source = ref<'kugou' | 'netease'>('kugou')
   function toggleSource() {
     source.value = source.value === 'kugou' ? 'netease' : 'kugou'
   }
@@ -40,22 +42,29 @@ export const useAppStore = defineStore('app', () => {
   function saveLogin(src: 'kugou' | 'netease', cookie: string, token?: string, userId?: string | number) {
     const cookieStr = token ? `token=${token};userid=${userId || ''}` : cookie
     setCookie(src, cookieStr)
-    if (src === 'kugou') kugouLogin.value = true
-    else neteaseLogin.value = true
+    // 换账号后旧缓存不能复用
+    clearUserCache(src)
+    if (src === 'kugou') { kugouLogin.value = true; kugouUser.value = null }
+    else { neteaseLogin.value = true; neteaseUser.value = null }
   }
 
   function logout(src: 'kugou' | 'netease') {
     clearCookie(src)
+    clearUserCache(src)
     if (src === 'kugou') { kugouLogin.value = false; kugouUser.value = null }
     else { neteaseLogin.value = false; neteaseUser.value = null }
+    if (source.value === src) { userPlaylists.value = []; userLikedSongs.value = [] }
   }
 
   async function loadUserInfo() {
-    const info = await fetchUserInfo(source.value)
-    if (info) {
-      if (source.value === 'kugou') { kugouUser.value = info; kugouLogin.value = true }
-      else { neteaseUser.value = info; neteaseLogin.value = true }
-    }
+    const src = source.value
+    const info = await fetchUserInfo(src)
+    if (!info) return
+    // 请求期间可能已退出登录，避免把旧信息写回
+    const stillLoggedIn = src === 'kugou' ? kugouLogin.value : neteaseLogin.value
+    if (!stillLoggedIn) return
+    if (src === 'kugou') { kugouUser.value = info; kugouLogin.value = true }
+    else { neteaseUser.value = info; neteaseLogin.value = true }
   }
 
   // ========== 用户平台数据 ==========
@@ -65,16 +74,19 @@ export const useAppStore = defineStore('app', () => {
 
   async function loadUserPlatformData() {
     if (!isLoggedIn()) { userPlaylists.value = []; userLikedSongs.value = []; return }
+    const src = source.value
     homeLoading.value = true
     try {
       const [playlists, liked] = await Promise.all([
-        getUserPlaylists(source.value),
-        getLikedSongs(source.value),
+        getUserPlaylists(src),
+        getLikedSongs(src),
       ])
+      // 加载期间已切换音源或退出登录，丢弃旧结果
+      if (source.value !== src || !isLoggedIn()) return
       userPlaylists.value = playlists
       userLikedSongs.value = liked
     } catch { /* 加载失败不影响其他功能 */ }
-    finally { homeLoading.value = false }
+    finally { if (source.value === src) homeLoading.value = false }
   }
 
   // ========== 播放器状态 ==========
@@ -87,18 +99,54 @@ export const useAppStore = defineStore('app', () => {
   const playMode = ref<PlayMode>('list')
   const showPlayer = ref(false)
 
+  /** 后台缓存整首音频（延迟 3 秒，避免刚切歌就抢占带宽） */
+  const cacheTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** 播放序号：切歌后丢弃旧的异步请求结果 */
+  let playToken = 0
+  function scheduleAudioCache(song: Song, url: string) {
+    const identity = song.hash || song.id
+    if (!identity) return
+    const key = `${song.source}:${identity}`
+    const old = cacheTimers.get(key)
+    if (old) clearTimeout(old)
+    const timer = setTimeout(() => {
+      cacheTimers.delete(key)
+      // 用户已经切走就不再下载，减少无谓流量
+      if (currentSong.value === song) void cacheAudio(song, url)
+    }, 3000)
+    cacheTimers.set(key, timer)
+  }
+
   async function playSong(song: Song) {
+    const token = ++playToken
     stopAudio()
     currentSong.value = song
     isPlaying.value = false
     audioUrl.value = ''
+    showPlayer.value = true
+
+    // 1. 优先读取本地音频缓存：命中后完全离线播放，不再请求网络
+    const cachedUrl = await getCachedAudioUrl(song)
+    if (token !== playToken) return // 期间已切歌，丢弃旧结果
+    if (cachedUrl) {
+      audioUrl.value = cachedUrl
+      isPlaying.value = true
+      return
+    }
+
+    // 离线且没有本地缓存：仍短暂尝试一次网络，失败后再提示
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+
+    // 2. 未缓存则获取播放链接（URL 本身也有一层短期缓存）
     const result = await getSongUrl(song)
+    if (token !== playToken) return // 期间已切歌，丢弃旧结果
     if (result.canPlay && result.url) {
       audioUrl.value = result.url
       isPlaying.value = true
-      showPlayer.value = true
+      // 3. 在线播放后把音频缓存到本地，下次直接命中
+      scheduleAudioCache(song, result.url)
     } else {
-      showPlayer.value = true
+      ElMessage.warning(offline ? '当前离线，且该歌曲尚未缓存' : '无法获取播放链接，请稍后重试')
       console.warn('无法获取播放链接:', song.name)
     }
   }
