@@ -9,13 +9,14 @@ import { VideoPause, VideoPlay, Back, Right, List, Delete } from '@element-plus/
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '../state'
 import { listen } from '@tauri-apps/api/event'
+import { isTauri } from '../api/http'
 
 const store = useAppStore()
 const audioRef = ref<HTMLAudioElement>()
 
-const currentTime = ref(0)
-const duration = ref(0)
-const progress = ref(0)
+const progress = computed(() =>
+  store.duration > 0 ? (store.currentTime / store.duration) * 100 : 0,
+)
 const listVisible = ref(false)
 
 // 拖拽状态
@@ -28,8 +29,11 @@ const modeLabel = computed(() => {
 
 onMounted(async () => {
   if (audioRef.value) store.setAudioElement(audioRef.value)
+  // 纯浏览器预览没有 Tauri 事件系统
+  if (!isTauri) return
   await listen("media-play", () => store.isPlaying = true)
   await listen("media-pause", () => store.isPlaying = false)
+  await listen("media-stop", () => store.isPlaying = false)
   await listen("media-prev", () => store.prev())
   await listen("media-next", () => store.next())
 })
@@ -60,9 +64,7 @@ watch(() => store.volume, (vol) => {
 
 function onTimeUpdate() {
   if (audioRef.value) {
-    currentTime.value = audioRef.value.currentTime
-    duration.value = audioRef.value.duration || 0
-    progress.value = duration.value > 0 ? (currentTime.value / duration.value) * 100 : 0
+    store.setPlaybackProgress(audioRef.value.currentTime, audioRef.value.duration || 0)
   }
 }
 function onEnded() { store.next() }
@@ -83,12 +85,22 @@ function onAudioError() {
   store.next()
 }
 function onLoadedMetadata() {
-  if (audioRef.value) { duration.value = audioRef.value.duration; audioRef.value.volume = store.volume }
+  if (audioRef.value) {
+    store.setPlaybackProgress(0, audioRef.value.duration)
+    audioRef.value.volume = store.volume
+  }
 }
 function seekTo(e: MouseEvent) {
   const el = e.currentTarget as HTMLElement
   const pct = (e.clientX - el.getBoundingClientRect().left) / el.offsetWidth
-  if (audioRef.value && duration.value > 0) audioRef.value.currentTime = pct * duration.value
+  if (store.duration > 0) store.seekTo(pct * store.duration)
+}
+
+/** 点击播放条空白处展开歌曲播放页 */
+function onBarClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (target.closest('button, .el-slider, .progress-bar, .el-popover, input')) return
+  store.openNowPlaying()
 }
 function formatTime(s: number): string {
   if (!isFinite(s) || s < 0) return '00:00'
@@ -117,7 +129,7 @@ function onDelete(idx: number, e: Event) {
 </script>
 
 <template>
-  <div class="player-bar">
+  <div class="player-bar" @click="onBarClick">
     <audio ref="audioRef" @timeupdate="onTimeUpdate" @ended="onEnded" @loadedmetadata="onLoadedMetadata" @error="onAudioError" />
 
     <!-- 左侧 -->
@@ -149,9 +161,9 @@ function onDelete(idx: number, e: Event) {
         </el-button>
       </div>
       <div class="progress-area">
-        <span class="time">{{ formatTime(currentTime) }}</span>
+        <span class="time">{{ formatTime(store.currentTime) }}</span>
         <div class="progress-bar" @click="seekTo"><div class="progress-fill" :style="{ width: progress + '%' }" /></div>
-        <span class="time">{{ formatTime(duration) }}</span>
+        <span class="time">{{ formatTime(store.duration) }}</span>
       </div>
     </div>
 

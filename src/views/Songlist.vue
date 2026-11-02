@@ -66,6 +66,10 @@ function isCurrent(song: Song): boolean {
   return song.source === 'kugou' ? current.hash === song.hash : current.id === song.id
 }
 
+function rowClassName({ row }: { row: Song }): string {
+  return isCurrent(row) ? 'playing-row' : ''
+}
+
 function playAll() {
   if (songs.value.length > 0) store.playList([...songs.value], 0)
 }
@@ -121,6 +125,9 @@ async function addToPlatform(playlist: Playlist) {
 
 function formatDuration(seconds?: number): string {
   if (!seconds || !isFinite(seconds) || seconds <= 0) return '--:--'
+  if (source.value === "kugou") {
+    seconds /=  1000
+  }
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
 }
 
@@ -134,7 +141,7 @@ function goBack() {
   <div class="songlist-page">
     <!-- 歌单信息 -->
     <div class="playlist-head">
-      <el-button text :icon="Back" class="back-btn" @click="goBack">返回</el-button>
+      <el-button text round :icon="Back" style="margin-bottom: 5px;margin-top: -20px;" @click="goBack">返回</el-button>
 
       <div class="head-main">
         <div class="head-cover">
@@ -160,69 +167,81 @@ function goBack() {
     </div>
 
     <!-- 歌曲列表 -->
-    <div class="song-list" v-loading="loading">
-      <template v-if="songs.length > 0">
-        <div class="list-header">
-          <span class="col-index">#</span>
-          <span class="col-song">歌曲</span>
-          <span class="col-artist">歌手</span>
-          <span class="col-album">专辑</span>
-          <span class="col-duration">时长</span>
-          <span class="col-actions">操作</span>
-        </div>
+    <div class="song-table" v-loading="loading" element-loading-text="正在加载歌单...">
+      <el-table
+        stripe
+        :data="songs"
+        :row-class-name="rowClassName"
+        @row-dblclick="onDblClick"
+      >
+        <el-table-column type="index" label="#" width="54" align="center" />
 
-        <div
-          v-for="(song, idx) in songs"
-          :key="song.hash || song.id || idx"
-          class="song-row"
-          :class="{ active: isCurrent(song) }"
-          @dblclick="onDblClick(song)"
-        >
-          <span class="col-index">{{ idx + 1 }}</span>
-
-          <div class="col-song">
-            <el-image v-if="song.pic" :src="song.pic" class="row-cover" fit="cover" lazy />
+        <el-table-column width="64" align="center">
+          <template #default="{ row }">
+            <el-image v-if="row.pic" :src="row.pic" class="row-cover" fit="cover" lazy />
             <span v-else class="row-cover row-cover-empty">
               <el-icon :size="16"><VideoPlay /></el-icon>
             </span>
-            <span class="row-title" :title="song.name">{{ song.name }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="name" label="歌曲" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="song-name-cell" :class="{ active: isCurrent(row) }">
+              <el-icon v-if="isCurrent(row) && store.isPlaying" :size="13" class="playing-icon">
+                <VideoPlay />
+              </el-icon>
+              {{ row.name }}
+            </span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="artist" label="歌手" min-width="130" show-overflow-tooltip />
+
+        <el-table-column prop="album" label="专辑" width="180" show-overflow-tooltip />
+
+        <el-table-column prop="duration" label="时长" width="76" align="center">
+          <template #default="{ row }">
+            <span class="duration-text">{{ formatDuration(row.duration) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="122" align="center">
+          <template #default="{ row }">
+            <div class="col-actions" @dblclick.stop>
+              <el-tooltip content="播放" placement="top">
+                <el-button text circle :icon="VideoPlay" @click.stop="onPlay(row)" />
+              </el-tooltip>
+
+              <el-tooltip :content="store.isFavorite(row) ? '取消本地收藏' : '本地收藏'" placement="top">
+                <el-button
+                  text
+                  circle
+                  @click.stop="onFav(row)"
+                  :style="{ color: store.isFavorite(row) ? 'var(--el-color-warning)' : '' }"
+                >
+                  <el-icon :size="16">
+                    <StarFilled v-if="store.isFavorite(row)" />
+                    <Star v-else />
+                  </el-icon>
+                </el-button>
+              </el-tooltip>
+
+              <el-tooltip content="添加到歌单" placement="top">
+                <el-button text circle :icon="FolderAdd" @click.stop="openAdd(row)" />
+              </el-tooltip>
+            </div>
+          </template>
+        </el-table-column>
+
+        <template #empty>
+          <div v-if="!loading" class="empty-state">
+            <el-icon :size="48" color="var(--el-text-color-placeholder)"><VideoPlay /></el-icon>
+            <p>{{ playlistId ? '歌单暂无歌曲，或当前离线且还没有缓存' : '请从首页选择要查看的歌单' }}</p>
+            <el-button text type="primary" @click="goBack">返回首页</el-button>
           </div>
-
-          <span class="col-artist" :title="song.artist">{{ song.artist || '未知歌手' }}</span>
-          <span class="col-album" :title="song.album">{{ song.album || '—' }}</span>
-          <span class="col-duration">{{ formatDuration(song.duration) }}</span>
-
-          <div class="col-actions" @dblclick.stop>
-            <el-tooltip content="播放" placement="top">
-              <el-button text circle :icon="VideoPlay" @click.stop="onPlay(song)" />
-            </el-tooltip>
-
-            <el-tooltip :content="store.isFavorite(song) ? '取消本地收藏' : '本地收藏'" placement="top">
-              <el-button
-                text
-                circle
-                @click.stop="onFav(song)"
-                :style="{ color: store.isFavorite(song) ? 'var(--el-color-warning)' : '' }"
-              >
-                <el-icon :size="16">
-                  <StarFilled v-if="store.isFavorite(song)" />
-                  <Star v-else />
-                </el-icon>
-              </el-button>
-            </el-tooltip>
-
-            <el-tooltip content="添加到歌单" placement="top">
-              <el-button text circle :icon="FolderAdd" @click.stop="openAdd(song)" />
-            </el-tooltip>
-          </div>
-        </div>
-      </template>
-
-      <div v-else-if="!loading" class="empty-state">
-        <el-icon :size="48" color="var(--el-text-color-placeholder)"><VideoPlay /></el-icon>
-        <p>{{ playlistId ? '歌单暂无歌曲，或当前离线且还没有缓存' : '请从首页选择要查看的歌单' }}</p>
-        <el-button text type="primary" @click="goBack">返回首页</el-button>
-      </div>
+        </template>
+      </el-table>
     </div>
 
     <!-- 添加到歌单 -->
@@ -283,7 +302,6 @@ function goBack() {
 
 /* 歌单头部 */
 .playlist-head { margin-bottom: 18px; }
-.back-btn { padding-left: 0; margin-bottom: 6px; color: var(--el-text-color-secondary); }
 .head-main { display: flex; align-items: center; gap: 18px; }
 .head-cover {
   width: 96px; height: 96px; border-radius: 12px; overflow: hidden; flex-shrink: 0;
@@ -298,41 +316,46 @@ function goBack() {
 .head-sub { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); }
 .head-actions { margin-top: 4px; }
 
-/* 歌曲列表 */
-.song-list {
-  border-radius: 10px; overflow: hidden;
+/* 歌曲表格 */
+.song-table {
+  position: relative;
+  min-height: 180px;
   border: 1px solid var(--el-border-color-light);
-  min-height: 160px;
+  border-radius: 10px;
+  overflow: hidden;
 }
-.list-header {
-  display: flex; align-items: center; padding: 10px 16px;
-  background: var(--el-fill-color-light);
-  font-size: 12px; color: var(--el-text-color-secondary); font-weight: 500;
+.song-table :deep(.el-table) {
+  --el-table-border-color: transparent;
+  --el-table-header-bg-color: var(--el-fill-color-light);
+  --el-table-row-hover-bg-color: var(--el-fill-color-light);
+  background: transparent;
 }
-.song-row {
-  display: flex; align-items: center; padding: 8px 16px;
-  cursor: pointer; font-size: 14px; transition: background 0.15s;
-  user-select: none;
+.song-table :deep(.el-table__header th) {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--el-text-color-secondary);
+  height: 42px;
 }
-.song-row:hover { background: var(--el-fill-color-light); }
-.song-row:nth-child(even) { background: var(--el-fill-color-lighter); }
-.song-row:nth-child(even):hover { background: var(--el-fill-color-light); }
-.song-row.active { color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.song-table :deep(.el-table__row) { cursor: pointer; }
+.song-table :deep(.playing-row > td) {
+  background: var(--el-color-primary-light-9) !important;
+}
+.song-table :deep(.song-name-cell) { font-weight: 500; }
+.song-table :deep(.song-name-cell.active) { color: var(--el-color-primary); }
+.song-table :deep(.playing-icon) { margin-right: 5px; vertical-align: -1px; }
+.song-table :deep(.duration-text) {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+}
 
-.col-index { width: 40px; flex-shrink: 0; text-align: center; color: var(--el-text-color-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
-.col-song { flex: 2.4; display: flex; align-items: center; gap: 10px; min-width: 0; }
-.col-artist { flex: 1.4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-album { flex: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--el-text-color-secondary); }
-.col-duration { width: 56px; flex-shrink: 0; text-align: right; font-size: 12px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
-.col-actions { width: 108px; flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
-
+.col-actions { display: flex; justify-content: center; margin: 0; }
+.col-actions button { margin: 0; }
 .row-cover { width: 34px; height: 34px; border-radius: 6px; flex-shrink: 0; }
 .row-cover-empty {
-  display: flex; align-items: center; justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center;
   background: var(--el-fill-color-light); color: var(--el-text-color-placeholder);
 }
-.row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.song-row.active .row-title { color: var(--el-color-primary); }
 
 /* 空状态 */
 .empty-state {
@@ -365,8 +388,6 @@ function goBack() {
 .add-pl-count { font-size: 12px; color: var(--el-text-color-secondary); flex-shrink: 0; }
 
 @media (max-width: 720px) {
-  .col-album { display: none; }
-  .col-duration { width: 46px; }
   .head-cover { width: 72px; height: 72px; }
   .head-title-row h2 { font-size: 18px; }
 }

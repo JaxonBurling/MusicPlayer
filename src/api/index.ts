@@ -54,6 +54,7 @@ export interface Playlist {
   coverUrl: string
   trackCount: number
   source: 'kugou' | 'netease'
+  create_time?: number
 }
 
 // ===================== Client 实例 =====================
@@ -234,10 +235,11 @@ async function ensureNeteaseAnonymous(): Promise<void> {
 // ===================== 歌词 =====================
 
 export async function getLyric(song: Song): Promise<string> {
-  if (song.source !== 'netease' || !song.id) return ''
+  const identity = song.source === 'kugou' ? song.hash : song.id
+  if (!identity) return ''
   return cachedQuery(
-    `lyric:netease:${song.id}`,
-    () => fetchNeteaseLyric(song.id as number),
+    `lyric:${song.source}:${identity}`,
+    () => (song.source === 'kugou' ? fetchKugouLyric(song) : fetchNeteaseLyric(song.id as number)),
     '',
     { ttl: 7 * 24 * 60 * 60_000, accept: (lyric) => lyric.length > 0 },
   )
@@ -251,6 +253,40 @@ async function fetchNeteaseLyric(id: number): Promise<string> {
     // ignore
   }
   return ''
+}
+
+/** 酷狗歌词：先按 hash 搜索候选，再下载并解码 KRC */
+async function fetchKugouLyric(song: Song): Promise<string> {
+  if (!song.hash) return ''
+
+  const candidatesOf = (body: any): any[] =>
+    body?.candidates || body?.data?.candidates || body?.data?.lists || []
+
+  try {
+    let data: any = (await kg.searchLyric({ hash: song.hash, duration: song.duration })).body
+    let candidates = candidatesOf(data)
+
+    if (candidates.length === 0 && song.name) {
+      data = (await kg.searchLyric({ keywords: song.name, duration: song.duration })).body
+      candidates = candidatesOf(data)
+    }
+
+    const candidate = candidates[0]
+    const id = candidate?.id || candidate?.lyric_id || candidate?.candidate_id
+    const accesskey = candidate?.accesskey || candidate?.accessKey
+    if (!id || !accesskey) return ''
+
+    const lyric = await kg.getLyric({
+      id: String(id),
+      accesskey: String(accesskey),
+      fmt: 'lrc',
+      decode: true,
+    })
+    const body: any = lyric.body
+    return body?.decodeContent || body?.content || ''
+  } catch {
+    return ''
+  }
 }
 
 // ===================== 登录 =====================
@@ -443,6 +479,7 @@ async function fetchUserPlaylists(source: 'kugou' | 'netease'): Promise<Playlist
           coverUrl: (item.pic || '').replace('{size}', '400'),
           trackCount: parseInt(item.count) || item.songcount || item.track_count || 0,
           source: 'kugou' as const,
+          create_time: item.create_time || 0,
         }))
       }
     } catch {
@@ -523,7 +560,7 @@ async function fetchPlaylistSongs(
             (item.name || '').substring(0, (item.name || '').indexOf(' - ')) ||
             '',
           album: item.AlbumName || (item.albuminfo || '').name || '',
-          duration: item.Duration || item.duration,
+          duration: item.Duration || item.duration ||item.timelen,
           source: 'kugou' as const,
         }))
       }

@@ -59,8 +59,11 @@ function goLogin() { router.push('/login') }
 </script>
 
 <template>
-<el-skeleton style="width: 240px" :loading="store.homeLoading" animated>
   <div class="main-page">
+    <!-- 加载骨架屏（保持单根节点，确保页面切换动画正常） -->
+    <el-skeleton v-if="store.homeLoading" class="home-skeleton" :rows="10" animated />
+
+    <template v-else>
     <!-- 已登录：平台歌单 -->
     <section v-if="store.isLoggedIn() && store.userPlaylists.length > 0" class="section">
         <div class="section-header">
@@ -180,12 +183,13 @@ function goLogin() { router.push('/login') }
         </div>
       </div>
     </section>
+    </template>
   </div>
-</el-skeleton>
 </template>
 
 <style scoped>
 .main-page { max-width: 1200px; margin: 0 auto; padding: 10px 0 80px; }
+.home-skeleton { max-width: 760px; padding: 12px 0; }
 .section { margin-bottom: 32px; }
 .section-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
 .section-header h2 { margin: 0; font-size: 20px; font-weight: 600; }

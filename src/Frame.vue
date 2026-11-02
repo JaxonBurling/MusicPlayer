@@ -10,12 +10,22 @@ import {
 import { useAppStore } from './state'
 import { useRouter } from 'vue-router'
 import Player from './component/Player.vue'
+import NowPlaying from './component/NowPlaying.vue'
+import { isTauri } from './api/http'
 
 const appStore = useAppStore()
 const router = useRouter()
 
 const searchInput = ref('')
 const darkMode = ref(false)
+const transitionName = ref('page-fade')
+
+// 首页 ↔ 歌单详情：根据前进 / 后退方向切换滑动动画
+router.afterEach((to, from) => {
+  if (to.name === 'songlist' && from.name === 'home') transitionName.value = 'page-slide-left'
+  else if (to.name === 'home' && from.name === 'songlist') transitionName.value = 'page-slide-right'
+  else transitionName.value = 'page-fade'
+})
 
 // 当前音源的用户头像（响应式）
 const avatarUrl = computed(() => {
@@ -50,7 +60,7 @@ watch(() => appStore.source, async () => {
 watch(darkMode, (val) => {
   appStore.applyDarkMode(val)
   // 广播给托盘菜单等其他窗口，保持主题同步
-  emit('theme-changed', val)
+  if (isTauri) emit('theme-changed', val)
 })
 
 function onSearchEnter() {
@@ -67,7 +77,7 @@ const handleAvatarError = () => true
 </script>
 
 <template>
-    <el-affix :offset="0">
+    <el-affix :offset="0" style="width: 100%">
         <div data-tauri-drag-region class="drag-region">
           <el-switch v-model="darkMode" :active-icon="Moon" :inactive-icon="Sunny" style="margin-left: 20px" />
           <div>
@@ -115,18 +125,59 @@ const handleAvatarError = () => true
 
         <el-divider style="margin: 0" />
 
-        <el-main>
-          <router-view />
+        <el-main class="main-view">
+          <router-view v-slot="{ Component, route: viewRoute }">
+            <Transition :name="transitionName" mode="out-in">
+              <component :is="Component" :key="viewRoute.path" />
+            </Transition>
+          </router-view>
         </el-main>
       </el-container>
 
       <Player />
+
+      <Transition name="now-playing">
+        <NowPlaying v-if="appStore.showNowPlaying" />
+      </Transition>
 </template>
 
 <style scoped>
-.drag-region { height: 40px; background: var(--el-bg-color); user-select: none; display: flex; justify-content: space-between; align-items: center;width: 100% }
+.drag-region { height: 40px; background: var(--el-bg-color); user-select: none; display: flex; justify-content: space-between; align-items: center; }
 .titlebar-button { display: inline-flex; width: 30px; height: 30px; user-select: none; }
 .header { font-size: 22px; letter-spacing: 2px; padding: 10px; display: flex; align-items: center; justify-content: space-between; }
 .header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .search-input { width: 40%; min-width: 100px; }
+.main-view { overflow-x: hidden; }
+
+/* 页面切换动画：首页 ↔ 歌单列表 */
+.page-fade-enter-active,
+.page-fade-leave-active,
+.page-slide-left-enter-active,
+.page-slide-left-leave-active,
+.page-slide-right-enter-active,
+.page-slide-right-leave-active {
+  transition: opacity 0.2s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-slide-left-enter-from {
+  opacity: 0;
+  transform: translateX(32px);
+}
+.page-slide-left-leave-to {
+  opacity: 0;
+  transform: translateX(-32px);
+}
+.page-slide-right-enter-from {
+  opacity: 0;
+  transform: translateX(-32px);
+}
+.page-slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(32px);
+}
 </style>

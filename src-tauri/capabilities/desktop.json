@@ -10,6 +10,6 @@
   ],
   "permissions": [
     "fs:default",
-    "http:default"
+    "media:default"
   ]
 }

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { Song, UserInfo, Playlist } from './api/index'
 import {
@@ -8,6 +8,10 @@ import {
   getUserPlaylists, getLikedSongs, clearUserCache,
 } from './api/index'
 import { getCachedAudioUrl, cacheAudio } from './audio-cache'
+import {
+  bindMediaActions, clearMediaSession, syncMediaSession,
+  syncPlaybackPosition, syncPlaybackState,
+} from './media-session'
 
 export type PlayMode = 'list' | 'random' | 'single'
 
@@ -98,6 +102,11 @@ export const useAppStore = defineStore('app', () => {
   const volume = ref(0.7)
   const playMode = ref<PlayMode>('list')
   const showPlayer = ref(false)
+  /** 当前播放进度（秒），供播放页 / 歌词 / 系统媒体会话共用 */
+  const currentTime = ref(0)
+  const duration = ref(0)
+  /** 歌曲播放页（从底部滑出） */
+  const showNowPlaying = ref(false)
 
   /** 后台缓存整首音频（延迟 3 秒，避免刚切歌就抢占带宽） */
   const cacheTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -120,6 +129,8 @@ export const useAppStore = defineStore('app', () => {
   async function playSong(song: Song) {
     const token = ++playToken
     stopAudio()
+    currentTime.value = 0
+    duration.value = 0
     currentSong.value = song
     isPlaying.value = false
     audioUrl.value = ''
@@ -250,12 +261,90 @@ export const useAppStore = defineStore('app', () => {
     saveFavorites()
   }
 
-  // ========== 音频 ==========
+  // ========== 音频 / 播放进度 ==========
   let audioEl: HTMLAudioElement | null = null
   function setAudioElement(el: HTMLAudioElement) { audioEl = el }
   function stopAudio() {
     if (audioEl) { audioEl.pause(); audioEl.currentTime = 0 }
   }
+
+  /** 播放器每次 timeupdate 调用，同时同步系统媒体进度（内部已节流） */
+  function setPlaybackProgress(time: number, total: number) {
+    currentTime.value = Number.isFinite(time) ? time : 0
+    if (total > 0) duration.value = total
+    syncPlaybackPosition(currentTime.value, duration.value)
+  }
+
+  /** 跳转到指定秒数（歌词双击 / 进度条 / 系统媒体拖动共用） */
+  function seekTo(seconds: number) {
+    if (!audioEl || !Number.isFinite(seconds)) return
+    const max = audioEl.duration && Number.isFinite(audioEl.duration) ? audioEl.duration : seconds
+    audioEl.currentTime = Math.max(0, Math.min(seconds, max))
+    currentTime.value = audioEl.currentTime
+    syncPlaybackPosition(currentTime.value, duration.value, true)
+  }
+
+  function openNowPlaying() {
+    if (currentSong.value) showNowPlaying.value = true
+  }
+  function closeNowPlaying() {
+    showNowPlaying.value = false
+  }
+
+  // 播放状态变化 → 同步系统媒体卡片
+  watch(currentSong, (song) => {
+    if (!song) {
+      showNowPlaying.value = false
+      void clearMediaSession()
+      return
+    }
+    void syncMediaSession(song, {
+      playing: isPlaying.value,
+      position: 0,
+      duration: duration.value,
+      playMode: playMode.value,
+    })
+  })
+
+  watch(isPlaying, (playing) => {
+    if (!currentSong.value) return
+    void syncPlaybackState({
+      playing,
+      position: currentTime.value,
+      duration: duration.value,
+      playMode: playMode.value,
+    })
+  })
+
+  watch(playMode, (mode) => {
+    if (!currentSong.value) return
+    void syncPlaybackState({
+      playing: isPlaying.value,
+      position: currentTime.value,
+      duration: duration.value,
+      playMode: mode,
+    })
+  })
+
+  // 音频元数据加载后补一次完整信息（尤其是总时长）
+  watch(duration, (total) => {
+    if (!currentSong.value || total <= 0) return
+    void syncMediaSession(currentSong.value, {
+      playing: isPlaying.value,
+      position: currentTime.value,
+      duration: total,
+      playMode: playMode.value,
+    })
+  })
+
+  // 浏览器标准媒体键（Tauri 下由 Rust 侧 SMTC 事件转发）
+  bindMediaActions({
+    play: () => { isPlaying.value = true },
+    pause: () => { isPlaying.value = false },
+    next: () => { void next() },
+    previous: () => { void prev() },
+    seek: (position) => seekTo(position),
+  })
 
   return {
     darkMode, applyDarkMode, toggleDarkMode,
@@ -264,8 +353,10 @@ export const useAppStore = defineStore('app', () => {
     isLoggedIn, currentUser, saveLogin, logout, loadUserInfo,
     userPlaylists, userLikedSongs, homeLoading, loadUserPlatformData,
     currentSong, playlist, playlistIndex, isPlaying, audioUrl, volume, playMode, showPlayer,
+    currentTime, duration, showNowPlaying,
     playSong, playFromList, playList, addToList, playNext, removeFromList, swapInList,
     prev, next, togglePlay, togglePlayMode, setAudioElement,
+    setPlaybackProgress, seekTo, openNowPlaying, closeNowPlaying,
     favorites, isFavorite, toggleFavorite,
   }
 })
